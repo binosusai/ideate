@@ -20,13 +20,22 @@ jobs:
           python-version: "3.11"
           cache: pip
 
-      - name: Install ideate with Postgres support
+      - name: Debug workspace path
+        run: |
+          echo "github.workspace=$GITHUB_WORKSPACE"
+          pwd
+          ls -la
+        working-directory: .
+
+      - name: Install ideate deps from repo root
         run: pip install -e ".[postgres]" agentops
+        working-directory: .
 
       - name: Initialise database schema
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: idea init
+        working-directory: .
 
       - name: Run daily review
         env:
@@ -35,3 +44,4 @@ jobs:
           OPENAI_API_KEY:    ${{ secrets.OPENAI_API_KEY }}
           IDEATE_MODEL:      gpt-4.1-nano
         run: idea daily
+        working-directory: .
