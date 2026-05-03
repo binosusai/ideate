@@ -14,17 +14,16 @@ on:
         type: string
 
 jobs:
-  pipeline:
-    name: Run idea pipeline
+  # ── Job 1: Research → Debate → Plan ─────────────────────────────────────────
+  plan:
+    name: Research, debate & plan
     runs-on: ubuntu-latest
-    # Allow the job to push planning files back and create repos
     permissions:
       contents: write
 
     steps:
       - uses: actions/checkout@v4
         with:
-          # Use a PAT so git push and gh repo create work under the org
           token: ${{ secrets.GH_PAT }}
 
       - uses: actions/setup-python@v5
@@ -70,7 +69,6 @@ jobs:
           AGENTOPS_API_KEY: ${{ secrets.AGENTOPS_API_KEY }}
           OPENAI_API_KEY:   ${{ secrets.OPENAI_API_KEY }}
           IDEATE_MODEL:     gpt-4.1-nano
-          # Write planning files into this checkout under ideate/ideas/
           IDEATE_HOME:      ${{ github.workspace }}
         run: idea plan ${{ inputs.idea_id }}
 
@@ -78,26 +76,45 @@ jobs:
         if: contains(inputs.stages, 'plan')
         run: |
           git add ideate/ideas/ || true
-          git diff --cached --quiet || git commit -m "chore: add planning files for idea ${{ inputs.idea_id }} [skip ci]"
+          git diff --cached --quiet || git commit -m "chore: planning files for idea ${{ inputs.idea_id }} [skip ci]"
           git push
 
-      - name: Approve
+  # ── Job 2: POC — requires manual approval via the 'poc-approval' environment ─
+  poc:
+    name: Build POC & create repo
+    needs: plan
+    runs-on: ubuntu-latest
+    # ⬇ This line makes GitHub pause here and email you for approval
+    environment: poc-approval
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install ideate deps
+        run: pip install -e ".[postgres]" agentops
+
+      - name: Approve idea
         if: contains(inputs.stages, 'approve')
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: idea approve ${{ inputs.idea_id }} --rationale "Auto-approved after planning pass in CI."
+        run: idea approve ${{ inputs.idea_id }} --rationale "Approved via poc-approval environment gate."
 
-      - name: POC
+      - name: Build POC & push new repo
         if: contains(inputs.stages, 'poc')
         env:
-          DATABASE_URL:        ${{ secrets.DATABASE_URL }}
-          AGENTOPS_API_KEY:    ${{ secrets.AGENTOPS_API_KEY }}
-          OPENAI_API_KEY:      ${{ secrets.OPENAI_API_KEY }}
-          IDEATE_MODEL:        gpt-4.1-nano
-          IDEATE_HOME:         ${{ github.workspace }}
-          # Write POC source code to a temp dir; _init_poc_repo will push it to GitHub
-          IDEATE_POC_HOME:     /tmp/pocs
-          IDEATE_GITHUB_ORG:   binosusai
-          # gh CLI reads GH_TOKEN; PAT must have repo + org scope to create repos
-          GH_TOKEN:            ${{ secrets.GH_PAT }}
+          DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+          AGENTOPS_API_KEY:  ${{ secrets.AGENTOPS_API_KEY }}
+          OPENAI_API_KEY:    ${{ secrets.OPENAI_API_KEY }}
+          IDEATE_MODEL:      gpt-4.1-nano
+          IDEATE_HOME:       ${{ github.workspace }}
+          IDEATE_POC_HOME:   /tmp/pocs
+          IDEATE_GITHUB_ORG: binosusai
+          GH_TOKEN:          ${{ secrets.GH_PAT }}
         run: idea poc ${{ inputs.idea_id }} --force
