@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS launchd agent for the daily Ideate review.
+
+  INSTALL:
+    1. Copy this file to ~/Library/LaunchAgents/
+         cp scripts/com.ideate.daily.plist ~/Library/LaunchAgents/
+    2. Edit the <string> values below to match your actual paths.
+    3. Load it (starts immediately and on every login):
+         launchctl load ~/Library/LaunchAgents/com.ideate.daily.plist
+    4. To stop and remove:
+         launchctl unload ~/Library/LaunchAgents/com.ideate.daily.plist
+
+  This runs WITHOUT a server.  launchd is the macOS system daemon manager
+  — it wakes the job at the scheduled time regardless of whether the machine
+  is sleeping (it will run at next wake if the time was missed).
+-->
+<plist version="1.0">
+<dict>
+
+  <!-- Unique label — must match the filename -->
+  <key>Label</key>
+  <string>com.ideate.daily</string>
+
+  <!-- Command to run.  Use the full path to the `idea` entry-point. -->
+  <key>ProgramArguments</key>
+  <array>
+    <!-- Replace with: which idea -->
+    <string>/Users/siddharthshankar/workspace/codex/ideate/.venv/bin/idea</string>
+    <string>daily</string>
+  </array>
+
+  <!-- Working directory (where ideate.sqlite3 lives) -->
+  <key>WorkingDirectory</key>
+  <string>/Users/siddharthshankar/workspace/codex/ideate</string>
+
+  <!-- Environment variables — export secrets here instead of .env -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>AGENTOPS_API_KEY</key>
+    <string>YOUR_AGENTOPS_API_KEY_HERE</string>
+    <key>OPENAI_API_KEY</key>
+    <string>YOUR_OPENAI_API_KEY_HERE</string>
+    <key>IDEATE_HOME</key>
+    <string>/Users/siddharthshankar/workspace/codex/ideate</string>
+  </dict>
+
+  <!-- Run every day at 09:00 local time -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>9</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+
+  <!-- Redirect stdout/stderr to a log file -->
+  <key>StandardOutPath</key>
+  <string>/Users/siddharthshankar/workspace/codex/ideate/.ideate/daily.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/siddharthshankar/workspace/codex/ideate/.ideate/daily-error.log</string>
+
+  <!-- Run again immediately if missed while the machine was off -->
+  <key>RunAtLoad</key>
+  <false/>
+
+</dict>
+</plist>

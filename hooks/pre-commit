@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+blocked="$(git diff --cached --name-only \
+  | grep -E '(^|/)\.env$|(^|/)\.env\.[A-Za-z0-9._-]+$|\.sqlite3$|\.db$|\.tfstate(\..*)?$' \
+  | grep -Ev '(^|/)\.env\.example$' \
+  || true)"
+
+if [ -n "$blocked" ]; then
+  echo "Blocked commit: secret/state files must not be committed." >&2
+  echo "$blocked" >&2
+  exit 1
+fi

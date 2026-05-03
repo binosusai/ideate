@@ -1,0 +1,4 @@
+agentops>=0.3
+
+[postgres]
+psycopg2-binary>=2.9

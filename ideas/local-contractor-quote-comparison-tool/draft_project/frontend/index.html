@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Local contractor quote comparison tool</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <section class="workspace">
+        <p class="eyebrow">money POC</p>
+        <h1>Local contractor quote comparison tool</h1>
+        <p class="summary">Homeowners upload or paste multiple contractor quotes, compare scope gaps, risk, pricing, and negotiation questions before choosing.</p>
+
+        <form id="idea-form">
+          <label for="idea-input">Input</label>
+          <textarea id="idea-input" name="input" rows="8" placeholder="Paste a customer note, workflow, landing page copy, or rough project input..."></textarea>
+          <button type="submit">Run POC</button>
+        </form>
+
+        <section class="output" aria-live="polite">
+          <h2>Recommendation</h2>
+          <p id="result">Run the POC to generate the first recommendation.</p>
+        </section>
+      </section>
+    </main>
+    <script src="./app.js"></script>
+  </body>
+</html>

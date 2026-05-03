@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ideate"
+version = "0.1.0"
+description = "Local-first Idea Implementation AI Agent Crew"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "agentops>=0.3",
+]
+
+[project.optional-dependencies]
+postgres = ["psycopg2-binary>=2.9"]
+
+[project.scripts]
+idea = "ideate.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

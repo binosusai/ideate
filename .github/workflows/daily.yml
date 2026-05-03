@@ -1,0 +1,41 @@
+name: Ideate Daily Review
+
+on:
+  schedule:
+    # 09:00 UTC every day. Adjust to your timezone — e.g. 14:00 UTC = 09:00 EST.
+    - cron: '0 9 * * *'
+  # Also allow manual runs from the GitHub Actions UI.
+  workflow_dispatch:
+
+jobs:
+  daily:
+    name: Daily idea review
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ideate
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install ideate with Postgres support
+        run: pip install -e ".[postgres]" agentops
+
+      - name: Initialise database schema
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: idea init
+
+      - name: Run daily review
+        env:
+          DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+          AGENTOPS_API_KEY:  ${{ secrets.AGENTOPS_API_KEY }}
+          OPENAI_API_KEY:    ${{ secrets.OPENAI_API_KEY }}
+          IDEATE_MODEL:      gpt-4.1-nano
+        run: idea daily
