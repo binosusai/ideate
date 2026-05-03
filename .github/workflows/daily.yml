@@ -12,10 +12,6 @@ jobs:
     name: Daily idea review
     runs-on: ubuntu-latest
 
-    defaults:
-      run:
-        working-directory: ideate
-
     steps:
       - uses: actions/checkout@v4
 
