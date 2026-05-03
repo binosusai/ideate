@@ -411,19 +411,32 @@ def _run_member(
     prior_outputs: dict[str, str],
     round_label: str = "opening",
 ) -> str:
-    llm_output = _llm_member_output(
-        stage,
-        member,
-        idea,
-        context,
-        prior_outputs,
-        round_label=round_label,
-    )
-    if llm_output:
-        return llm_output
-    if os.environ.get("IDEATE_REQUIRE_LLM") == "1":
-        raise RuntimeError(f"LLM output missing for {member.name} while IDEATE_REQUIRE_LLM=1")
-    return member.run(idea, context | prior_outputs)
+    def _execute_member() -> str:
+        llm_output = _llm_member_output(
+            stage,
+            member,
+            idea,
+            context,
+            prior_outputs,
+            round_label=round_label,
+        )
+        if llm_output:
+            return llm_output
+        if os.environ.get("IDEATE_REQUIRE_LLM") == "1":
+            raise RuntimeError(f"LLM output missing for {member.name} while IDEATE_REQUIRE_LLM=1")
+        return member.run(idea, context | prior_outputs)
+
+    try:
+        import agentops  # type: ignore[import]
+
+        traced_call = agentops.agent(
+            name=f"{stage}:{member.name}:{round_label}",
+            capture_request=False,
+            capture_response=True,
+        )(_execute_member)
+        return traced_call()
+    except Exception:
+        return _execute_member()
 
 
 def market_researcher(idea: Idea, context: dict[str, str]) -> str:
