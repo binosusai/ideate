@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 from pathlib import Path
 
 from .agents import acceptance_tests, handoff_brief
@@ -168,6 +169,42 @@ def write_openspec(path: Path, idea: Idea) -> None:
     )
 
 
+def _init_poc_repo(project: Path, idea: Idea) -> None:
+    """Git-init the poc folder and create a GitHub repo under the org (best-effort)."""
+    org = os.environ.get("IDEATE_GITHUB_ORG", "binosusai")
+    repo_name = poc_name(idea)
+    try:
+        subprocess.run(["git", "init"], cwd=project, check=True, capture_output=True)
+        subprocess.run(["git", "add", "."], cwd=project, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "Initial POC scaffold"],
+            cwd=project,
+            check=True,
+            capture_output=True,
+        )
+    except Exception as exc:  # pragma: no cover
+        print(f"[ideate] git init failed: {exc}")
+        return
+    # gh CLI uses GH_TOKEN env var; fall back to current environment (CI sets GH_TOKEN directly)
+    result = subprocess.run(
+        [
+            "gh", "repo", "create",
+            f"{org}/{repo_name}",
+            "--public",
+            "--source", str(project),
+            "--push",
+            "--description", idea.title,
+        ],
+        cwd=project,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        print(f"[ideate] GitHub repo created: https://github.com/{org}/{repo_name}")
+    else:
+        print(f"[ideate] GitHub repo creation failed (local repo still initialized): {result.stderr.strip()}")
+
+
 def write_poc(root: Path, idea: Idea) -> bool:
     path = ensure_idea_folder(root, idea)
     project = poc_dir(root, idea)
@@ -179,6 +216,7 @@ def write_poc(root: Path, idea: Idea) -> bool:
 
     write_common_poc_infra(poc_workspace(root), platform_workspace(root))
     write_draft_project(project, idea, platform_workspace(root))
+    _init_poc_repo(project, idea)
     return True
 
 
