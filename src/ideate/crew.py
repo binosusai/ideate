@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from typing import Callable
 
@@ -31,6 +32,7 @@ class CrewMember:
     role: str
     mission: str
     run: Callable[[Idea, dict[str, str]], str]
+    temperature: float = 0.4
 
 
 @dataclass(frozen=True)
@@ -48,18 +50,21 @@ def run_research_crew(idea: Idea) -> CrewResult:
             "research",
             "Find who might pay, what they use today, and why now.",
             market_researcher,
+            temperature=0.25,
         ),
         CrewMember(
             "User Researcher",
             "research",
             "Describe the daily pain and the first user workflow.",
             user_researcher,
+            temperature=0.45,
         ),
         CrewMember(
             "Technical Scout",
             "research",
             "Identify local-first POC feasibility and likely blockers.",
             technical_scout,
+            temperature=0.2,
         ),
     ]
     return run_crew("research", idea, members, synthesize_research)
@@ -72,24 +77,28 @@ def run_debate_crew(idea: Idea, research: str | None) -> CrewResult:
             "debate",
             "Argue why this idea deserves a POC now.",
             advocate,
+            temperature=0.85,
         ),
         CrewMember(
             "Skeptic",
             "debate",
             "Attack assumptions, risk, and opportunity cost.",
             skeptic,
+            temperature=0.3,
         ),
         CrewMember(
             "Builder",
             "debate",
             "Find the smallest credible build path.",
             builder,
+            temperature=0.45,
         ),
         CrewMember(
             "Strategist",
             "debate",
             "Rank the idea against focus, money potential, and timing.",
             strategist,
+            temperature=0.25,
         ),
     ]
     return run_crew("debate", idea, members, synthesize_debate, {"research": research or ""})
@@ -102,54 +111,63 @@ def run_planning_crew(idea: Idea, research: str | None, debate: str | None) -> C
             "planning",
             "Turn the refined idea into an MVP workflow.",
             product_planner,
+            temperature=0.35,
         ),
         CrewMember(
             "POC Coder",
             "planning",
             "Define the smallest working local proof of concept.",
             poc_coder,
+            temperature=0.3,
         ),
         CrewMember(
             "Frontend Engineer",
             "planning",
             "Define the first usable interface for the POC.",
             frontend_engineer,
+            temperature=0.5,
         ),
         CrewMember(
             "Backend Engineer",
             "planning",
             "Define API and local persistence needs for the POC.",
             backend_engineer,
+            temperature=0.35,
         ),
         CrewMember(
             "Auth Engineer",
             "planning",
             "Choose the auth posture for local POC and production handoff.",
             auth_engineer,
+            temperature=0.2,
         ),
         CrewMember(
             "Database Engineer",
             "planning",
             "Choose local and deployable database defaults.",
             database_engineer,
+            temperature=0.2,
         ),
         CrewMember(
             "Infra Engineer",
             "planning",
             "Define AWS/Vercel/Terraform deployment shape.",
             infra_engineer,
+            temperature=0.25,
         ),
         CrewMember(
             "DevOps Engineer",
             "planning",
             "Define GitHub automation, checks, and deployment notes.",
             devops_engineer,
+            temperature=0.2,
         ),
         CrewMember(
             "OpenSpec Writer",
             "planning",
             "Define implementation requirements and acceptance checks.",
             openspec_writer,
+            temperature=0.2,
         ),
     ]
     context = {"research": research or "", "debate": debate or ""}
@@ -166,7 +184,7 @@ def run_crew(
     context = context or {}
     outputs: dict[str, str] = {}
     for member in members:
-        outputs[member.name] = member.run(idea, context | outputs)
+        outputs[member.name] = _run_member(stage, member, idea, context, outputs)
     synthesis = synthesizer(idea, context, outputs)
     _record_crew_event(stage, idea.title, [m.name for m in members], synthesis)
     return CrewResult(
@@ -194,6 +212,148 @@ def crew_transcript(
         sections.append(f"## {member.name}\n{outputs[member.name]}")
     sections.append(f"## Coordinator Synthesis\n{synthesis}")
     return md(f"Crew Transcript: {stage.title()} - {idea.title}", "\n\n".join(sections))
+
+
+def _env_token(value: str) -> str:
+    return re.sub(r"[^A-Z0-9]+", "_", value.upper()).strip("_")
+
+
+def _resolve_model(stage: str, member: CrewMember) -> str:
+    keys = [
+        f"IDEATE_MODEL_{_env_token(stage)}_{_env_token(member.name)}",
+        f"IDEATE_MODEL_{_env_token(stage)}_{_env_token(member.role)}",
+        f"IDEATE_MODEL_{_env_token(stage)}",
+        "IDEATE_MODEL",
+    ]
+    for key in keys:
+        value = os.environ.get(key)
+        if value:
+            return value
+    return "gpt-4.1-nano"
+
+
+def _resolve_temperature(stage: str, member: CrewMember) -> float:
+    keys = [
+        f"IDEATE_TEMPERATURE_{_env_token(stage)}_{_env_token(member.name)}",
+        f"IDEATE_TEMPERATURE_{_env_token(stage)}_{_env_token(member.role)}",
+        f"IDEATE_TEMPERATURE_{_env_token(stage)}",
+        "IDEATE_TEMPERATURE",
+    ]
+    for key in keys:
+        value = os.environ.get(key)
+        if not value:
+            continue
+        try:
+            parsed = float(value)
+            return min(max(parsed, 0.0), 2.0)
+        except ValueError:
+            continue
+    return member.temperature
+
+
+def _style_hint(member: CrewMember) -> str:
+    if member.name == "Advocate":
+        return "Be persuasive, specific, and outcome-focused."
+    if member.name == "Skeptic":
+        return "Stress-test assumptions and quantify risks."
+    if member.name == "Builder":
+        return "Propose practical low-complexity build paths."
+    if member.name == "Strategist":
+        return "Prioritize options by expected impact and speed."
+    if member.role == "planning":
+        return "Provide implementation-ready detail and explicit tradeoffs."
+    return "Use concise bullet points grounded in the idea context."
+
+
+def _member_prompt(
+    stage: str,
+    member: CrewMember,
+    idea: Idea,
+    context: dict[str, str],
+    prior_outputs: dict[str, str],
+) -> tuple[str, str]:
+    context_lines = [
+        f"idea_title: {idea.title}",
+        f"idea_category: {idea.category}",
+        f"idea_why: {idea.why or 'n/a'}",
+    ]
+    for key, value in context.items():
+        if value:
+            context_lines.append(f"{key}: {value[:2500]}")
+
+    teammate_text = ""
+    if prior_outputs:
+        teammate_lines = [f"{name}: {output}" for name, output in prior_outputs.items()]
+        teammate_text = "\n\nTeammate outputs so far:\n" + "\n".join(teammate_lines)
+
+    collaboration_rule = ""
+    if stage == "debate" and prior_outputs:
+        collaboration_rule = (
+            "Reference at least one teammate by name and explicitly support or challenge their argument."
+        )
+
+    system_prompt = (
+        f"You are {member.name}. Mission: {member.mission}. "
+        f"Stage: {stage}. { _style_hint(member) } "
+        "Keep response under 180 words and make it actionable."
+    )
+    user_prompt = (
+        "Context:\n"
+        + "\n".join(context_lines)
+        + teammate_text
+        + (f"\n\nCollaboration requirement: {collaboration_rule}" if collaboration_rule else "")
+    )
+    return system_prompt, user_prompt
+
+
+def _llm_member_output(
+    stage: str,
+    member: CrewMember,
+    idea: Idea,
+    context: dict[str, str],
+    prior_outputs: dict[str, str],
+) -> str | None:
+    if not os.environ.get("OPENAI_API_KEY"):
+        return None
+    if os.environ.get("IDEATE_FORCE_RULE_BASED") == "1":
+        return None
+    try:
+        from openai import OpenAI  # type: ignore[import]
+    except Exception:
+        return None
+
+    model = _resolve_model(stage, member)
+    temperature = _resolve_temperature(stage, member)
+    system_prompt, user_prompt = _member_prompt(stage, member, idea, context, prior_outputs)
+    try:
+        client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+        response = client.responses.create(
+            model=model,
+            temperature=temperature,
+            input=[
+                {"role": "system", "content": [{"type": "text", "text": system_prompt}]},
+                {"role": "user", "content": [{"type": "text", "text": user_prompt}]},
+            ],
+        )
+        output = (getattr(response, "output_text", None) or "").strip()
+        if output:
+            return output
+    except Exception:
+        return None
+    return None
+
+
+def _run_member(
+    stage: str,
+    member: CrewMember,
+    idea: Idea,
+    context: dict[str, str],
+    prior_outputs: dict[str, str],
+) -> str:
+    llm_output = _llm_member_output(stage, member, idea, context, prior_outputs)
+    if llm_output:
+        return llm_output
+    return member.run(idea, context | prior_outputs)
 
 
 def market_researcher(idea: Idea, context: dict[str, str]) -> str:
