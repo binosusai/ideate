@@ -20,6 +20,13 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      SMTP_HOST: ${{ secrets.SMTP_HOST }}
+      SMTP_PORT: ${{ secrets.SMTP_PORT }}
+      SMTP_USER: ${{ secrets.SMTP_USER }}
+      SMTP_PASS: ${{ secrets.SMTP_PASS }}
+      IDEATE_EMAIL_TO: ${{ secrets.IDEATE_EMAIL_TO }}
+      IDEATE_EMAIL_FROM: ${{ secrets.IDEATE_EMAIL_FROM }}
 
     steps:
       - uses: actions/checkout@v4
@@ -133,17 +140,17 @@ jobs:
             ideas/${{ steps.idea_meta.outputs.slug }}/implementation_plan.md
 
       - name: Email proposal
-        if: contains(inputs.stages, 'plan') && secrets.SMTP_HOST != '' && secrets.SMTP_USER != '' && secrets.SMTP_PASS != '' && secrets.IDEATE_EMAIL_TO != '' && secrets.IDEATE_EMAIL_FROM != ''
+        if: contains(inputs.stages, 'plan') && env.SMTP_HOST != '' && env.SMTP_USER != '' && env.SMTP_PASS != '' && env.IDEATE_EMAIL_TO != '' && env.IDEATE_EMAIL_FROM != ''
         uses: dawidd6/action-send-mail@v3
         with:
-          server_address: ${{ secrets.SMTP_HOST }}
-          server_port: ${{ secrets.SMTP_PORT || '587' }}
+          server_address: ${{ env.SMTP_HOST }}
+          server_port: ${{ env.SMTP_PORT || '587' }}
           secure: false
-          username: ${{ secrets.SMTP_USER }}
-          password: ${{ secrets.SMTP_PASS }}
+          username: ${{ env.SMTP_USER }}
+          password: ${{ env.SMTP_PASS }}
           subject: Ideate proposal for idea #${{ inputs.idea_id }} - ${{ steps.idea_meta.outputs.title }}
-          to: ${{ secrets.IDEATE_EMAIL_TO }}
-          from: ${{ secrets.IDEATE_EMAIL_FROM }}
+          to: ${{ env.IDEATE_EMAIL_TO }}
+          from: ${{ env.IDEATE_EMAIL_FROM }}
           body: file:///tmp/proposal_email.txt
 
       - name: Commit planning files back to repo
