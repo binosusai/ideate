@@ -20,56 +20,57 @@ Unified API key gateway — one key per project that provisions and proxies all 
 Continue to debate. The idea is strong enough for structured criticism, but not yet ready for full engineering crew handoff.
 
 ## Crew Additions
-- Market Researcher: - Who might pay:
-  - Software development teams and startups managing multiple APIs
-  - DevOps and security teams seeking centralized credential control
-  - SaaS companies integrating multiple third-party APIs
-- What they use today:
-  - Manual API key management via environment variables or secrets managers
-  - Multiple API keys stored in code, config files, or third-party tools
-  - Custom scripts or homegrown solutions for key rotation and provisioning
-- Why now:
-  - Increasing API integrations heighten security and management complexity
-  - Growing emphasis on DevSecOps and credential security
-  - Need for faster onboarding and reduced setup friction in agile environments
-  - Rising adoption of API gateways and centralized credential solutions
-- Actionable steps:
-  - Identify early adopters in SaaS, fintech, and DevOps sectors
-  - Conduct interviews to validate pain points and willingness to pay
-  - Benchmark current API management practices and costs
-  - Develop a minimal viable product (MVP) for testing with pilot users
-- User Researcher: - Daily Pain:
-  - Managing multiple API keys across tools is time-consuming and error-prone
-  - Risk of security breaches due to inconsistent key handling
-  - Onboarding new tools is slow, requiring manual setup for each API
-  - Difficulty tracking and rotating keys securely and efficiently
+- Market Researcher: - **Who might pay:**  
+  - SaaS companies integrating multiple third-party APIs  
+  - Development teams in startups and enterprises  
+  - API management and security providers  
 
-- First User Workflow:
-  - Developer logs into the project dashboard
-  - Selects or creates a project within the gateway
-  - Requests or automatically provisions a unified API key
-  - Uses the gateway URL with the project-specific key for integrations
-  - When adding a new tool, clicks a "Add API" button to generate and link a new key
-  - Monitors key usage and rotates keys via centralized control panel
-  - Onboarded team members access credentials through secure, centralized interface
+- **What they use today:**  
+  - Multiple API keys per tool, managed manually or via custom solutions  
+  - API gateways or IAM platforms with limited integration scope  
+  - Manual onboarding processes for new tools  
 
-- Actionable:
-  - Map user journey from initial setup to daily management
-  - Identify friction points during key provisioning and rotation
-  - Prioritize features that streamline onboarding and secure management
-- Technical Scout: - Feasibility of local-first POC:
-  - Leverage existing secrets managers (e.g., HashiCorp Vault, AWS Secrets Manager) for local key storage
-  - Use lightweight proxy or SDK to intercept API calls and inject project-specific keys
-  - Integrate with popular CI/CD tools for automated key provisioning and rotation
+- **Why now:**  
+  - Increasing API integrations heighten security and management complexity  
+  - Growing demand for streamlined onboarding and credential management  
+  - Rising API security concerns and compliance needs  
+  - Developers seek efficiency to reduce setup time and errors  
 
-- Likely blockers:
-  - Variability in API authentication methods (OAuth, API tokens, etc.) complicates standardization
-  - Security concerns around local key storage and proxy interception
-  - Resistance from teams with strict compliance policies on centralized credential management
-  - Potential latency introduced by proxy layer affecting API performance
+**Actionable steps:**  
+- Conduct interviews with DevOps and security teams to validate pain points  
+- Identify SaaS platforms managing multiple APIs  
+- Analyze competitors offering API key management solutions  
+- Explore early adopters in tech startups and enterprise dev teams
+- User Researcher: **Daily Pain Points:**
+- Manually tracking and rotating multiple API keys, risking errors or security lapses
+- Wasting time onboarding new tools—copying, pasting, configuring keys
+- Managing inconsistent security policies across different API keys
+- Frustration with fragmented credential management systems
 
-- Actionable next steps:
-  - Identify local-first teams already using secrets managers or proxies
-  - Conduct interviews to assess willingness to adopt a unified gateway
-  - Prototype minimal local proxy with key injection for a common API type
-  - Evaluate security implications and compliance requirements early in development
+**First User Workflow:**
+1. Developer logs into the platform/dashboard
+2. Selects or creates a project
+3. Clicks “Add API” to integrate a new third-party tool
+4. Uses the unified API key gateway to generate or assign a project-specific key
+5. The system automatically provisions, proxies, and manages the keys
+6. Developer tests API integration within the project
+7. Onboarding is complete with a single, centralized credential management point
+
+**Action:**  
+- Interview developers and security teams to validate workflow steps and pain points  
+- Map out onboarding scenarios to refine the process and identify friction points
+- Technical Scout: - **Local-first POC feasibility:**  
+  - Likely feasible with a lightweight, client-side key management layer for initial testing  
+  - Can leverage existing open-source API gateway solutions for prototyping  
+
+- **Potential blockers:**  
+  - Security concerns around storing and managing API keys locally or in a decentralized manner  
+  - Variability in API security policies and authentication methods across third-party tools  
+  - Integration complexity with diverse API providers and existing DevOps workflows  
+  - User trust in centralized credential management—need for robust encryption and access controls  
+
+- **Actionable next steps:**  
+  - Conduct targeted interviews with developers and security teams to assess trust and security expectations  
+  - Prototype a minimal local-first version focusing on key generation and proxying  
+  - Identify common API providers and authentication methods to evaluate integration challenges  
+  - Map existing credential workflows to pinpoint friction points and potential blockers
