@@ -1,4 +1,5 @@
 agentops>=0.3
+openai>=1.51.0
 
 [postgres]
 psycopg2-binary>=2.9

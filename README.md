@@ -109,3 +109,16 @@ ideas/<idea-slug>/
   infra/terraform/
   .github/workflows/
 ```
+
+
+# Set required env vars
+export DATABASE_URL="$PG_CONN_STR"
+export AGENTOPS_API_KEY="<your-key-from-agentops.ai>"
+export OPENAI_API_KEY="<your-key>"
+
+# Run the pipeline
+.venv/bin/idea research 1
+.venv/bin/idea debate 1
+.venv/bin/idea plan 1
+.venv/bin/idea approve 1
+.venv/bin/idea poc 1  
