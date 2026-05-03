@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -20,7 +21,11 @@ def _agentops_init() -> bool:
     try:
         import agentops  # type: ignore[import]
 
-        agentops.init(api_key=api_key, auto_start_session=True)
+        agentops.init(
+            api_key=api_key,
+            auto_start_session=True,
+            instrument_llm_calls=True,
+        )
         return True
     except Exception:
         return False
@@ -41,8 +46,33 @@ def project_root() -> Path:
     return Path(os.environ.get("IDEATE_HOME", Path.cwd())).resolve()
 
 
+def terraform_database_url(root: Path) -> str | None:
+    """Read DATABASE_URL from terraform output if infra is configured."""
+    if os.environ.get("IDEATE_DISABLE_TERRAFORM_DB") == "1":
+        return None
+    tf_dir = root / "infra" / "terraform"
+    if not tf_dir.exists():
+        return None
+    try:
+        result = subprocess.run(
+            ["terraform", "output", "-raw", "database_url"],
+            cwd=tf_dir,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except Exception:
+        return None
+    if result.returncode != 0:
+        return None
+    value = result.stdout.strip()
+    return value or None
+
+
 def store_for(root: Path) -> Store | PgStore:
     database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        database_url = terraform_database_url(root)
     if database_url:
         return PgStore(database_url)
     return Store(root / ".ideate" / "ideate.sqlite3")

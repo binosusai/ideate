@@ -101,7 +101,51 @@ def run_debate_crew(idea: Idea, research: str | None) -> CrewResult:
             temperature=0.25,
         ),
     ]
+    if os.environ.get("IDEATE_STRICT_DEBATE") == "1":
+        return run_debate_crew_strict(idea, members, {"research": research or ""})
     return run_crew("debate", idea, members, synthesize_debate, {"research": research or ""})
+
+
+def run_debate_crew_strict(
+    idea: Idea,
+    members: list[CrewMember],
+    context: dict[str, str],
+) -> CrewResult:
+    opening_outputs: dict[str, str] = {}
+    for member in members:
+        opening_outputs[member.name] = _run_member("debate", member, idea, context, opening_outputs)
+
+    round_two_context = context | {
+        "debate_round_1": "\n".join(f"{k}: {v}" for k, v in opening_outputs.items())
+    }
+    rebuttal_outputs: dict[str, str] = {}
+    for member in members:
+        rebuttal_outputs[member.name] = _run_member(
+            "debate",
+            member,
+            idea,
+            round_two_context,
+            opening_outputs | rebuttal_outputs,
+            round_label="rebuttal",
+        )
+
+    outputs = {
+        member.name: (
+            "Round 1 - Opening Statement:\n"
+            + opening_outputs[member.name]
+            + "\n\nRound 2 - Rebuttal:\n"
+            + rebuttal_outputs[member.name]
+        )
+        for member in members
+    }
+    synthesis = synthesize_debate(idea, context, outputs)
+    _record_crew_event("debate", idea.title, [m.name for m in members], synthesis)
+    return CrewResult(
+        stage="debate",
+        synthesis=synthesis,
+        transcript=crew_transcript("debate", idea, members, outputs, synthesis),
+        member_outputs=outputs,
+    )
 
 
 def run_planning_crew(idea: Idea, research: str | None, debate: str | None) -> CrewResult:
@@ -271,6 +315,7 @@ def _member_prompt(
     idea: Idea,
     context: dict[str, str],
     prior_outputs: dict[str, str],
+    round_label: str = "opening",
 ) -> tuple[str, str]:
     context_lines = [
         f"idea_title: {idea.title}",
@@ -292,6 +337,10 @@ def _member_prompt(
             "Reference at least one teammate by name and explicitly support or challenge their argument."
         )
 
+    round_note = ""
+    if stage == "debate" and round_label == "rebuttal":
+        round_note = "This is rebuttal round. Address at least two teammates and revise your stance if needed."
+
     system_prompt = (
         f"You are {member.name}. Mission: {member.mission}. "
         f"Stage: {stage}. { _style_hint(member) } "
@@ -302,6 +351,7 @@ def _member_prompt(
         + "\n".join(context_lines)
         + teammate_text
         + (f"\n\nCollaboration requirement: {collaboration_rule}" if collaboration_rule else "")
+        + (f"\n\nRound instruction: {round_note}" if round_note else "")
     )
     return system_prompt, user_prompt
 
@@ -312,6 +362,7 @@ def _llm_member_output(
     idea: Idea,
     context: dict[str, str],
     prior_outputs: dict[str, str],
+    round_label: str = "opening",
 ) -> str | None:
     if not os.environ.get("OPENAI_API_KEY"):
         return None
@@ -324,21 +375,30 @@ def _llm_member_output(
 
     model = _resolve_model(stage, member)
     temperature = _resolve_temperature(stage, member)
-    system_prompt, user_prompt = _member_prompt(stage, member, idea, context, prior_outputs)
+    system_prompt, user_prompt = _member_prompt(
+        stage,
+        member,
+        idea,
+        context,
+        prior_outputs,
+        round_label=round_label,
+    )
     try:
         client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-        response = client.responses.create(
+        response = client.chat.completions.create(
             model=model,
             temperature=temperature,
-            input=[
-                {"role": "system", "content": [{"type": "text", "text": system_prompt}]},
-                {"role": "user", "content": [{"type": "text", "text": user_prompt}]},
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
             ],
         )
-        output = (getattr(response, "output_text", None) or "").strip()
+        output = ((response.choices[0].message.content or "") if response.choices else "").strip()
         if output:
             return output
-    except Exception:
+    except Exception as exc:
+        if os.environ.get("IDEATE_REQUIRE_LLM") == "1":
+            raise RuntimeError(f"LLM call failed for {member.name}: {exc}") from exc
         return None
     return None
 
@@ -349,10 +409,20 @@ def _run_member(
     idea: Idea,
     context: dict[str, str],
     prior_outputs: dict[str, str],
+    round_label: str = "opening",
 ) -> str:
-    llm_output = _llm_member_output(stage, member, idea, context, prior_outputs)
+    llm_output = _llm_member_output(
+        stage,
+        member,
+        idea,
+        context,
+        prior_outputs,
+        round_label=round_label,
+    )
     if llm_output:
         return llm_output
+    if os.environ.get("IDEATE_REQUIRE_LLM") == "1":
+        raise RuntimeError(f"LLM output missing for {member.name} while IDEATE_REQUIRE_LLM=1")
     return member.run(idea, context | prior_outputs)
 
 

@@ -58,6 +58,7 @@ jobs:
           AGENTOPS_API_KEY: ${{ secrets.AGENTOPS_API_KEY }}
           OPENAI_API_KEY:   ${{ secrets.OPENAI_API_KEY }}
           IDEATE_MODEL:     gpt-4.1-nano
+          IDEATE_REQUIRE_LLM: "1"
         run: idea research ${{ inputs.idea_id }}
 
       - name: Debate
@@ -67,6 +68,8 @@ jobs:
           AGENTOPS_API_KEY: ${{ secrets.AGENTOPS_API_KEY }}
           OPENAI_API_KEY:   ${{ secrets.OPENAI_API_KEY }}
           IDEATE_MODEL:     gpt-4.1-nano
+          IDEATE_STRICT_DEBATE: "1"
+          IDEATE_REQUIRE_LLM: "1"
         run: idea debate ${{ inputs.idea_id }}
 
       - name: Plan
@@ -76,6 +79,7 @@ jobs:
           AGENTOPS_API_KEY: ${{ secrets.AGENTOPS_API_KEY }}
           OPENAI_API_KEY:   ${{ secrets.OPENAI_API_KEY }}
           IDEATE_MODEL:     gpt-4.1-nano
+          IDEATE_REQUIRE_LLM: "1"
           IDEATE_HOME:      ${{ github.workspace }}
         run: idea plan ${{ inputs.idea_id }}
 
