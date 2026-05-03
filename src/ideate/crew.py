@@ -117,6 +117,7 @@ def _run_members_parallel(
                 context,
                 prior_outputs,
                 round_label,
+                "parallel",
             ): _member_display_name(stage, member)
             for member in members
         }
@@ -444,6 +445,9 @@ def _member_prompt(
         if value:
             context_lines.append(f"{key}: {value[:2500]}")
 
+    if stage == "research":
+        context_lines.append(f"research_focus: {_research_focus(member, idea)}")
+
     teammate_text = ""
     if prior_outputs:
         teammate_lines = [f"{name}: {output}" for name, output in prior_outputs.items()]
@@ -528,6 +532,7 @@ def _run_member(
     context: dict[str, str],
     prior_outputs: dict[str, str],
     round_label: str = "opening",
+    execution_mode: str = "sequential",
 ) -> str:
     def _execute_member() -> str:
         llm_output = _llm_member_output(
@@ -549,6 +554,12 @@ def _run_member(
 
         traced_call = agentops.agent(
             name=f"{stage}:{member.name}:{round_label}",
+            tags={
+                "execution_mode": execution_mode,
+                "stage": stage,
+                "round": round_label,
+                "member_role": member.role,
+            },
             capture_request=False,
             capture_response=True,
         )(_execute_member)
@@ -582,6 +593,29 @@ def technical_scout(idea: Idea, context: dict[str, str]) -> str:
     if any(blocker in text for blocker in blockers):
         return "POC should use mocks because the idea mentions external prerequisites or credentials."
     return "POC is feasible as a local script or small app using sample data and deterministic logic."
+
+
+def _research_focus(member: CrewMember, idea: Idea) -> str:
+    if member.name == "Market Researcher":
+        if idea.category == "money":
+            return (
+                "Identify ICP segments, willingness-to-pay signals, competing tools, and a realistic entry pricing angle. "
+                "Highlight one narrow wedge where distribution is easiest."
+            )
+        return (
+            "Identify target user archetypes, recurring trigger moments, and non-monetary value signals such as time saved."
+        )
+    if member.name == "User Researcher":
+        return (
+            "Map current user journey: trigger, friction point, workaround, and desired outcome. "
+            "Recommend first-run workflow and success criteria for week-one usage."
+        )
+    if member.name == "Technical Scout":
+        return (
+            "Evaluate implementation risks, integration constraints, and minimal architecture for a local-first MVP. "
+            "Call out what must be mocked in POC vs what can be built now."
+        )
+    return "Provide practical research insights grounded in the idea context."
 
 
 def advocate(idea: Idea, context: dict[str, str]) -> str:
