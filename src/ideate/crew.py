@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import os
 import re
 from dataclasses import dataclass
@@ -78,6 +79,52 @@ def _member_display_name(stage: str, member: CrewMember) -> str:
     return THEME_NAMES.get(theme, {}).get(stage, {}).get(member.name, member.name)
 
 
+def _parallel_enabled(stage: str) -> bool:
+    if os.environ.get("IDEATE_PARALLEL", "1") != "1":
+        return False
+    # Default: keep standard debate sequential for richer back-and-forth context.
+    # Strict debate has explicit two rounds and can parallelize within each round.
+    return stage in {"research", "planning"}
+
+
+def _parallel_workers(member_count: int) -> int:
+    raw = os.environ.get("IDEATE_MAX_PARALLEL_AGENTS", "")
+    if raw:
+        try:
+            return max(1, min(member_count, int(raw)))
+        except ValueError:
+            pass
+    return max(1, member_count)
+
+
+def _run_members_parallel(
+    stage: str,
+    members: list[CrewMember],
+    idea: Idea,
+    context: dict[str, str],
+    prior_outputs: dict[str, str],
+    round_label: str = "opening",
+) -> dict[str, str]:
+    worker_count = _parallel_workers(len(members))
+    outputs: dict[str, str] = {}
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        future_map = {
+            executor.submit(
+                _run_member,
+                stage,
+                member,
+                idea,
+                context,
+                prior_outputs,
+                round_label,
+            ): _member_display_name(stage, member)
+            for member in members
+        }
+        for future, member_name in future_map.items():
+            outputs[member_name] = future.result()
+    return outputs
+
+
 def run_research_crew(idea: Idea) -> CrewResult:
     members = [
         CrewMember(
@@ -146,25 +193,39 @@ def run_debate_crew_strict(
     members: list[CrewMember],
     context: dict[str, str],
 ) -> CrewResult:
-    opening_outputs: dict[str, str] = {}
-    for member in members:
-        member_name = _member_display_name("debate", member)
-        opening_outputs[member_name] = _run_member("debate", member, idea, context, opening_outputs)
+    opening_outputs: dict[str, str]
+    if os.environ.get("IDEATE_PARALLEL", "1") == "1":
+        opening_outputs = _run_members_parallel("debate", members, idea, context, {}, "opening")
+    else:
+        opening_outputs = {}
+        for member in members:
+            member_name = _member_display_name("debate", member)
+            opening_outputs[member_name] = _run_member("debate", member, idea, context, opening_outputs)
 
     round_two_context = context | {
         "debate_round_1": "\n".join(f"{k}: {v}" for k, v in opening_outputs.items())
     }
-    rebuttal_outputs: dict[str, str] = {}
-    for member in members:
-        member_name = _member_display_name("debate", member)
-        rebuttal_outputs[member_name] = _run_member(
+    if os.environ.get("IDEATE_PARALLEL", "1") == "1":
+        rebuttal_outputs = _run_members_parallel(
             "debate",
-            member,
+            members,
             idea,
             round_two_context,
-            opening_outputs | rebuttal_outputs,
-            round_label="rebuttal",
+            opening_outputs,
+            "rebuttal",
         )
+    else:
+        rebuttal_outputs: dict[str, str] = {}
+        for member in members:
+            member_name = _member_display_name("debate", member)
+            rebuttal_outputs[member_name] = _run_member(
+                "debate",
+                member,
+                idea,
+                round_two_context,
+                opening_outputs | rebuttal_outputs,
+                round_label="rebuttal",
+            )
 
     outputs = {
         _member_display_name("debate", member): (
@@ -268,10 +329,13 @@ def run_crew(
     context: dict[str, str] | None = None,
 ) -> CrewResult:
     context = context or {}
-    outputs: dict[str, str] = {}
-    for member in members:
-        member_name = _member_display_name(stage, member)
-        outputs[member_name] = _run_member(stage, member, idea, context, outputs)
+    if _parallel_enabled(stage):
+        outputs = _run_members_parallel(stage, members, idea, context, {})
+    else:
+        outputs: dict[str, str] = {}
+        for member in members:
+            member_name = _member_display_name(stage, member)
+            outputs[member_name] = _run_member(stage, member, idea, context, outputs)
     synthesis = synthesizer(idea, context, outputs)
     _record_crew_event(stage, idea.title, [_member_display_name(stage, m) for m in members], synthesis)
     return CrewResult(
@@ -322,7 +386,12 @@ def _resolve_model(stage: str, member: CrewMember) -> str:
         value = os.environ.get(key)
         if value:
             return value
-    return "gpt-4.1-nano"
+    stage_defaults = {
+        "research": "gpt-4.1",
+        "debate": "gpt-4.1",
+        "planning": "gpt-4.1-mini",
+    }
+    return stage_defaults.get(stage, "gpt-4.1-nano")
 
 
 def _resolve_temperature(stage: str, member: CrewMember) -> float:
