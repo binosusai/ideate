@@ -43,6 +43,41 @@ class CrewResult:
     member_outputs: dict[str, str]
 
 
+THEME_NAMES: dict[str, dict[str, dict[str, str]]] = {
+    "bihar_jharkhand": {
+        "research": {
+            "Market Researcher": "Litti Bazaar Scout",
+            "User Researcher": "Patna Pain Finder",
+            "Technical Scout": "Ranchi Feasibility Scout",
+        },
+        "debate": {
+            "Advocate": "Dhuska Advocate",
+            "Skeptic": "Tilkut Skeptic",
+            "Builder": "Jamshedpur Builder",
+            "Strategist": "Bodhgaya Strategist",
+        },
+        "planning": {
+            "Product Planner": "Sattu Product Planner",
+            "POC Coder": "Bokaro POC Coder",
+            "Frontend Engineer": "Madhubani Frontend Engineer",
+            "Backend Engineer": "Dhanbad Backend Engineer",
+            "Auth Engineer": "Deoghar Auth Engineer",
+            "Database Engineer": "Gaya Database Engineer",
+            "Infra Engineer": "Hazaribagh Infra Engineer",
+            "DevOps Engineer": "Muzaffarpur DevOps Engineer",
+            "OpenSpec Writer": "Pitha OpenSpec Writer",
+        },
+    }
+}
+
+
+def _member_display_name(stage: str, member: CrewMember) -> str:
+    theme = os.environ.get("IDEATE_AGENT_THEME", "").strip().lower()
+    if not theme:
+        return member.name
+    return THEME_NAMES.get(theme, {}).get(stage, {}).get(member.name, member.name)
+
+
 def run_research_crew(idea: Idea) -> CrewResult:
     members = [
         CrewMember(
@@ -113,14 +148,16 @@ def run_debate_crew_strict(
 ) -> CrewResult:
     opening_outputs: dict[str, str] = {}
     for member in members:
-        opening_outputs[member.name] = _run_member("debate", member, idea, context, opening_outputs)
+        member_name = _member_display_name("debate", member)
+        opening_outputs[member_name] = _run_member("debate", member, idea, context, opening_outputs)
 
     round_two_context = context | {
         "debate_round_1": "\n".join(f"{k}: {v}" for k, v in opening_outputs.items())
     }
     rebuttal_outputs: dict[str, str] = {}
     for member in members:
-        rebuttal_outputs[member.name] = _run_member(
+        member_name = _member_display_name("debate", member)
+        rebuttal_outputs[member_name] = _run_member(
             "debate",
             member,
             idea,
@@ -130,16 +167,21 @@ def run_debate_crew_strict(
         )
 
     outputs = {
-        member.name: (
+        _member_display_name("debate", member): (
             "Round 1 - Opening Statement:\n"
-            + opening_outputs[member.name]
+            + opening_outputs[_member_display_name("debate", member)]
             + "\n\nRound 2 - Rebuttal:\n"
-            + rebuttal_outputs[member.name]
+            + rebuttal_outputs[_member_display_name("debate", member)]
         )
         for member in members
     }
     synthesis = synthesize_debate(idea, context, outputs)
-    _record_crew_event("debate", idea.title, [m.name for m in members], synthesis)
+    _record_crew_event(
+        "debate",
+        idea.title,
+        [_member_display_name("debate", m) for m in members],
+        synthesis,
+    )
     return CrewResult(
         stage="debate",
         synthesis=synthesis,
@@ -228,9 +270,10 @@ def run_crew(
     context = context or {}
     outputs: dict[str, str] = {}
     for member in members:
-        outputs[member.name] = _run_member(stage, member, idea, context, outputs)
+        member_name = _member_display_name(stage, member)
+        outputs[member_name] = _run_member(stage, member, idea, context, outputs)
     synthesis = synthesizer(idea, context, outputs)
-    _record_crew_event(stage, idea.title, [m.name for m in members], synthesis)
+    _record_crew_event(stage, idea.title, [_member_display_name(stage, m) for m in members], synthesis)
     return CrewResult(
         stage=stage,
         synthesis=synthesis,
@@ -250,10 +293,16 @@ def crew_transcript(
         f"## Stage\n{stage}",
         f"## Idea\n{idea.title}",
         "## Crew\n"
-        + bullet_list([f"{member.name} ({member.role}): {member.mission}" for member in members]),
+        + bullet_list(
+            [
+                f"{_member_display_name(stage, member)} ({member.role}): {member.mission}"
+                for member in members
+            ]
+        ),
     ]
     for member in members:
-        sections.append(f"## {member.name}\n{outputs[member.name]}")
+        member_name = _member_display_name(stage, member)
+        sections.append(f"## {member_name}\n{outputs[member_name]}")
     sections.append(f"## Coordinator Synthesis\n{synthesis}")
     return md(f"Crew Transcript: {stage.title()} - {idea.title}", "\n\n".join(sections))
 
