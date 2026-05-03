@@ -72,10 +72,84 @@ jobs:
           IDEATE_HOME:      ${{ github.workspace }}
         run: idea plan ${{ inputs.idea_id }}
 
+      - name: Resolve idea metadata
+        if: contains(inputs.stages, 'plan')
+        id: idea_meta
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          IDEA_ID: ${{ inputs.idea_id }}
+        run: |
+          python - <<'PY'
+          import os
+          import psycopg2
+
+          idea_id = int(os.environ["IDEA_ID"])
+          conn = psycopg2.connect(os.environ["DATABASE_URL"])
+          try:
+            with conn.cursor() as cur:
+              cur.execute("SELECT slug, title FROM ideas WHERE id = %s", (idea_id,))
+              row = cur.fetchone()
+            if not row:
+              raise SystemExit(f"idea {idea_id} not found")
+            slug, title = row
+            with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"slug={slug}\n")
+              fh.write(f"title={title}\n")
+          finally:
+            conn.close()
+          PY
+
+      - name: Build proposal email body
+        if: contains(inputs.stages, 'plan')
+        env:
+          IDEA_ID: ${{ inputs.idea_id }}
+          IDEA_SLUG: ${{ steps.idea_meta.outputs.slug }}
+          IDEA_TITLE: ${{ steps.idea_meta.outputs.title }}
+        run: |
+          {
+            echo "Ideate Proposal"
+            echo "Idea ID: $IDEA_ID"
+            echo "Title: $IDEA_TITLE"
+            echo "Slug: $IDEA_SLUG"
+            echo
+            echo "=== Research ==="
+            cat "ideas/$IDEA_SLUG/research.md"
+            echo
+            echo "=== Debate ==="
+            cat "ideas/$IDEA_SLUG/debate.md"
+            echo
+            echo "=== Implementation Plan ==="
+            cat "ideas/$IDEA_SLUG/implementation_plan.md"
+          } > /tmp/proposal_email.txt
+
+      - name: Upload proposal artifacts
+        if: contains(inputs.stages, 'plan')
+        uses: actions/upload-artifact@v4
+        with:
+          name: idea-${{ inputs.idea_id }}-proposal
+          path: |
+            ideas/${{ steps.idea_meta.outputs.slug }}/research.md
+            ideas/${{ steps.idea_meta.outputs.slug }}/debate.md
+            ideas/${{ steps.idea_meta.outputs.slug }}/implementation_plan.md
+
+      - name: Email proposal
+        if: contains(inputs.stages, 'plan') && secrets.SMTP_HOST != '' && secrets.SMTP_USER != '' && secrets.SMTP_PASS != '' && secrets.IDEATE_EMAIL_TO != '' && secrets.IDEATE_EMAIL_FROM != ''
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.SMTP_HOST }}
+          server_port: ${{ secrets.SMTP_PORT || '587' }}
+          secure: false
+          username: ${{ secrets.SMTP_USER }}
+          password: ${{ secrets.SMTP_PASS }}
+          subject: Ideate proposal for idea #${{ inputs.idea_id }} - ${{ steps.idea_meta.outputs.title }}
+          to: ${{ secrets.IDEATE_EMAIL_TO }}
+          from: ${{ secrets.IDEATE_EMAIL_FROM }}
+          body: file:///tmp/proposal_email.txt
+
       - name: Commit planning files back to repo
         if: contains(inputs.stages, 'plan')
         run: |
-          git add ideate/ideas/ || true
+          git add ideas/ || true
           git diff --cached --quiet || git commit -m "chore: planning files for idea ${{ inputs.idea_id }} [skip ci]"
           git push
 
