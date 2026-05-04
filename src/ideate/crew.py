@@ -634,13 +634,19 @@ def _run_member(
     try:
         import agentops  # type: ignore[import]
 
+        trace_group = os.environ.get("IDEATE_AGENTOPS_TRACE_GROUP", "ideate-crew").strip() or "ideate-crew"
         traced_call = agentops.agent(
-            name=f"{stage}:{member.name}:{round_label}",
+            name=trace_group,
             tags={
                 "execution_mode": execution_mode,
                 "stage": stage,
                 "round": round_label,
+                "member_name": member.name,
                 "member_role": member.role,
+                "idea_id": str(idea.id),
+                "idea_slug": idea.slug,
+                "workflow": os.environ.get("GITHUB_WORKFLOW", ""),
+                "workflow_run_id": os.environ.get("GITHUB_RUN_ID", ""),
             },
             capture_request=False,
             capture_response=True,

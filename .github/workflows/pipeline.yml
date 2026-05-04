@@ -391,9 +391,9 @@ jobs:
 
   review:
     name: Review generated POC
-    needs: plan
+    needs: [plan, poc]
     runs-on: ubuntu-latest
-    if: needs.plan.outputs.idea_id != '0' && contains(needs.plan.outputs.stages, 'review')
+    if: needs.plan.outputs.idea_id != '0' && contains(needs.plan.outputs.stages, 'review') && (needs.poc.result == 'success' || needs.poc.result == 'skipped')
     environment: poc-review
 
     steps:
