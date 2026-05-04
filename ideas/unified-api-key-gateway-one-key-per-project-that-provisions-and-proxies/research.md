@@ -20,36 +20,36 @@ Unified API key gateway — one key per project that provisions and proxies all 
 Continue to debate. The idea is strong enough for structured criticism, but not yet ready for full engineering crew handoff.
 
 ## Crew Additions
-- Market Researcher: Findings:  
-- Narrowest Segment: Early-stage SaaS startups (2–10 devs) integrating multiple third-party APIs (e.g., Stripe, SendGrid, Auth0) in pre-launch or MVP phase, often lacking robust secrets management.  
-- Alternatives: Manual .env management, open-source secrets managers (Doppler, Vault), and API gateway plugins (Kong, Tyk); none offer unified provisioning/proxying across third-party APIs with single-key onboarding.  
-- Willingness-to-Pay Signals: Startups paying for developer productivity tools (e.g., Sentry, Vercel), and those citing onboarding friction or security incidents in forums/Slack channels, show highest urgency and budget ($20–$50/mo/project feasible).
-
-Risks:  
-- High inertia: Teams may resist migrating existing keys/processes, especially if security/compliance is a concern.  
-- Platform dependency: Reliance on your proxy could be a blocker for companies with strict data or uptime requirements.
-
-Recommendation:  
-- Target YC/accelerator-backed SaaS startups via founder Slack groups and offer a free migration/onboarding concierge for their first project to drive rapid, low-friction adoption.
-- User Researcher: Findings:
-- Trigger: Developers are tasked with integrating multiple third-party APIs for a new project, requiring secure management of numerous API keys.
-- Current workaround: Teams manually store keys in environment variables or secret managers, leading to scattered credentials, time-consuming onboarding, and error-prone updates.
-- Sharpest pain point: Onboarding new APIs or rotating keys is slow and risky—often requiring code changes, redeployments, and coordination across team members.
-
-Risks:
-- Complexity in mapping and securely proxying diverse third-party authentication flows could delay initial value delivery.
-- Teams may distrust a new gateway with all their credentials, fearing a single point of failure or breach.
-
-Recommendation:
-- First-run workflow: Allow users to create a project, connect one existing third-party API, and generate a unified project key. Show immediate success by proxying a test request through the gateway, confirming connectivity and credential masking. Success criteria: User completes integration and sees a successful proxied API call within 15 minutes.
-- Technical Scout: Findings  
-- A local-first MVP can proxy requests via a lightweight gateway (e.g., Node.js/Express) that maps a single project key to stored third-party API keys, with local config files for key storage and routing.  
-- For a POC, third-party API integrations (e.g., Stripe, SendGrid) can be mocked with stub endpoints; only the key mapping and proxy logic need to be real.  
-- Minimal viable security (e.g., key encryption at rest, basic auth on the gateway) can be implemented locally, but robust auditing and rotation must be deferred.
+- Market Researcher: Findings  
+• Narrowest ICP: Seed-to-Series B SaaS startups (5–30 devs) building integrations-heavy products (e.g., workflow automation, analytics platforms) that frequently onboard new APIs.  
+• Willingness-to-pay signals: Teams already paying for API management (e.g., RapidAPI Teams, AWS Secrets Manager), or using paid CI/CD tools with secret management add-ons; pain is acute when onboarding new devs or rotating credentials.  
+• Current alternatives: Manual key management in vaults (HashiCorp Vault, AWS Secrets Manager), or homegrown scripts; no direct “one-key-to-many-APIs” proxy exists—closest are API gateways, but they lack unified provisioning.
 
 Risks  
-- Securely storing and handling third-party API keys, even locally, introduces significant risk if encryption or access controls are weak.  
-- Some third-party APIs may have rate limits, IP whitelisting, or require OAuth flows, complicating seamless proxying and onboarding.
+• High switching friction: Security/compliance concerns and existing vault integrations may slow adoption.  
+• Tooling inertia: Dev teams may resist replacing established secret management workflows.
 
 Recommendation  
-- Build a CLI tool and local proxy that maps a unified project key to mocked third-party APIs, focusing on pluggable key storage and routing logic; defer real integrations and advanced security to later iterations.
+• Entry wedge: Target VC-backed SaaS startups using Zapier/Make for integrations, offering a free tier for up to 3 APIs and a Slack onboarding bot—distribute via dev-focused Slack/Discord communities and partner with early-stage accelerators.
+- User Researcher: Findings:
+- Trigger: Developers are prompted to manage multiple third-party API keys when integrating new tools or rotating credentials for security audits.
+- Workaround: Teams use spreadsheets, password managers, or homegrown scripts to track and share API keys, leading to scattered storage and manual updates.
+- Sharpest pain: High risk of key leakage, onboarding delays, and lost productivity due to fragmented credential management and lack of visibility into key usage.
+
+Risks:
+- Integration friction: Initial setup may require significant effort to map and migrate existing keys, deterring adoption.
+- Security trust: Users may hesitate to centralize sensitive credentials in a new system without proven security assurances.
+
+Recommendation:
+- First-run workflow: Allow users to create a project, generate a unified API key, and connect at least one third-party service in under 10 minutes. Provide instant feedback on successful proxying and clear visibility into which underlying keys are managed. Week-one success: At least one external API call routed and tracked via the unified key.
+- Technical Scout: Findings  
+- A local-first MVP can use a lightweight proxy (e.g., Node.js/Express or Go) to intercept requests, map the unified key to stored third-party keys, and forward requests. Key storage can be local (e.g., encrypted JSON or SQLite).  
+- Third-party API integrations must be mocked for the POC, as real integrations require handling diverse authentication flows, rate limits, and error formats. Only the key mapping and proxy logic need to be built now.  
+- Minimal architecture: local proxy server, encrypted key-value store for API keys, and a config file for mapping unified keys to third-party services. No cloud or external dependencies required for MVP.  
+
+Risks  
+- Security: Storing and proxying real API keys locally increases risk of credential leakage if the local environment is compromised.  
+- Integration complexity: Supporting diverse third-party authentication schemes (OAuth, API key, JWT) will require significant custom logic beyond the MVP.  
+
+Recommendation  
+- Build the MVP with a local proxy and encrypted key store, mocking third-party APIs; validate developer workflow before tackling real integrations or cloud deployment.
