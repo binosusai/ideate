@@ -9,6 +9,6 @@ Developers manage dozens of API keys across tools; one unified key per project r
 - Keep the first draft local-first, secret-safe, and deploy-aware.
 
 ## Impact
-- Adds a draft project under the workspace-level `pocs/unifiedapikeygatewayonekeyperprojectthatprovisionsandproxies/` folder.
+- Adds a draft project under the workspace-level `pocs/picogridqd/` folder.
 - Adds frontend, backend, database, infra, DevOps, and deployment documentation.
 - Defines implementation requirements in `specs/`.
