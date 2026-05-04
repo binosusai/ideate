@@ -21,9 +21,9 @@ Continue to debate. The idea is strong enough for structured criticism, but not 
 
 ## Crew Additions
 - Market Researcher: **Findings:**
-1. **Narrowest ICP:** 5–30 person, VC-backed SaaS startups in accelerator programs, building integration-heavy products (e.g., workflow automation, SaaS aggregators) without dedicated DevOps/security staff.
-2. **Current Alternatives & Willingness-to-Pay:** Teams use RapidAPI Teams, AWS Secrets Manager, or brittle scripts; willingness-to-pay spikes during rapid onboarding/offboarding, frequent API key rotation, and audit/compliance events.
-3. **Entry Wedge:** Free tier covering up to 3 APIs/project, promoted via dev-focused Slack/Discord communities and accelerator partnerships, with Slack onboarding bot as a differentiator.
+1. **ICP Segment:** 5–30 person, VC-backed SaaS startups in accelerator programs, building integration-heavy products (e.g., workflow automation, SaaS aggregators) without dedicated DevOps/security staff.
+2. **Current Alternatives & Willingness-to-Pay:** Teams rely on RapidAPI Teams, AWS Secrets Manager, or custom scripts. Willingness-to-pay spikes during rapid onboarding/offboarding, frequent API key rotation, and audit/compliance events.
+3. **Entry Wedge & Pricing:** Free tier for up to 3 APIs/project, promoted via dev-focused Slack/Discord communities and accelerator partnerships. Slack onboarding bot as a differentiator. Paid plans start at $49/mo/project for advanced audit and team features.
 
 **Risks:**
 - **Switching Friction:** Security/compliance concerns and existing vault integrations may slow adoption, especially for teams with ingrained workflows.
@@ -31,27 +31,25 @@ Continue to debate. The idea is strong enough for structured criticism, but not 
 
 **Recommendation:**  
 Target integration-heavy SaaS startups in accelerators with a free tier and Slack onboarding bot. Focus messaging on “single-key onboarding” and rapid key rotation to stand out from generic secrets managers.
-- User Researcher: **Findings:**
-1. **Trigger:** Developers are prompted to manage multiple third-party API keys when onboarding new teammates or integrating additional SaaS tools, often under time pressure (e.g., sprint deadlines, compliance audits).
-2. **Current Workaround:** Teams use spreadsheets, password managers (e.g., 1Password), or brittle scripts to share, rotate, and revoke API keys, leading to delays, errors, and security risks.
-3. **Sharpest Pain Point:** The highest friction is onboarding new team members—developers waste time requesting, copying, and validating multiple keys for each tool, often missing updates or exposing keys accidentally.
+- User Researcher: Findings  
+- Trigger: Developers are forced to wrangle multiple third-party API keys when onboarding a new teammate, rotating credentials, or integrating a new tool—especially acute during rapid team growth or compliance audits.
+- Current Workaround: Most teams use a mix of shared password managers (e.g., 1Password), brittle scripts, and copy-pasting keys into local .env files; some use generic secrets managers but still require manual proxy/config for each service.
+- Sharpest Pain Point: The highest friction occurs during onboarding/offboarding and key rotation—manual steps are error-prone, slow, and create security/audit gaps, especially when updating keys across multiple environments.
+
+Risks  
+- Security Perception: Developers may distrust a local proxy that handles all credentials, fearing leaks or loss of control, especially without visible audit trails or open-source transparency.
+- Adoption Hurdle: If initial setup (e.g., configuring the proxy, importing keys) takes more than 10–15 minutes or feels less secure than current methods, users will abandon before seeing value.
+
+Recommendation  
+- First-Run Workflow: CLI tool with `init` (new project), `add-tool` (connect Stripe/GitHub), and `start-proxy` (run local gateway); immediately test a real API call via the proxy and show a clear audit log entry to prove it works—success is “one-key, one-command, working API call” within 10 minutes.
+- Technical Scout: **Findings:**
+1. A local CLI tool can credibly generate a “project key,” store third-party API keys in an encrypted file (e.g., using Python’s `cryptography` or Node’s `keytar`), and run a lightweight proxy (Flask/FastAPI or Express) to inject credentials and forward requests.
+2. For MVP, proxying 2–3 APIs (e.g., Stripe, GitHub, Slack) is feasible using their public REST endpoints; real API calls can be made if user supplies valid keys, but for demo, responses can be mocked with static JSON.
+3. Audit logging (per-request, per-tool) can be implemented as local file writes; rotation of the “project key” can simply re-encrypt the stored secrets.
 
 **Risks:**
-1. **Perceived Complexity:** If the first-run workflow requires more steps than existing manual methods, users may abandon before seeing value.
-2. **Security Skepticism:** Without clear local encryption and zero cloud sync, users may distrust storing sensitive keys in a new tool.
+1. Secure local key storage is nontrivial—OS keychains are safer but add cross-platform complexity; file-based encryption is easier but less secure and may deter security-conscious users.
+2. Some APIs (e.g., OAuth-based) require interactive flows or callbacks, which complicates proxying and may need to be mocked or deferred for MVP.
 
 **Recommendation:**  
-Design the first-run workflow to deliver a “single-key onboarding” moment within 10 minutes:  
-- `uakg init` → `uakg add --tool` for 2–3 tools → share unified key → simulate proxy request.  
-Success = user sees all tool requests routed via one key and can onboard a teammate without manual key handoff.
-- Technical Scout: **Findings:**  
-1. **Minimal Architecture:** A CLI tool can generate a unified project key, locally store encrypted third-party keys, and map unified keys to real API keys using a YAML/JSON config. No backend or network proxy is required for the MVP.  
-2. **Mocking Required:** Actual API requests and key rotation must be mocked—simulate proxying and rotation logic with local file reads/writes and canned responses, as real third-party API integration would require network calls and handling sensitive credentials.  
-3. **Security Constraints:** Local encryption (e.g., using OS keyring or simple symmetric encryption) is sufficient for POC, but not production. No multi-user or remote access is supported; all data remains on the developer’s machine.
-
-**Risks:**  
-1. **Integration Complexity:** Extending from local simulation to real proxying (network layer, secure storage, multi-user) will introduce significant complexity and security review, slowing future delivery.  
-2. **Perceived Value:** Without real API proxying, some design partners may not see enough differentiation from a secrets manager or config file, risking weak validation.
-
-**Recommendation:**  
-Proceed with the CLI-first, local-only MVP, but explicitly mock all network and rotation actions. Document these mocks and highlight them in demos to manage expectations and gather targeted feedback on the core workflow.
+Build the MVP with file-encrypted local storage and static JSON mocks for at least one API; defer OAuth flows and advanced audit features. This enables a credible demo with minimal dependencies and clear next steps.
