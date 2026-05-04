@@ -78,6 +78,34 @@ The app should read secrets only from exported environment variables. It should 
 0 9 * * * cd /Users/siddharthshankar/workspace/codex/ideate && PYTHONPATH=src python3 -m ideate.cli daily >> .ideate/daily.log 2>&1
 ```
 
+## Project Kanban Filters
+
+Use a GitHub Project board backed by issue filters.
+
+Base filter (all agent tasks):
+
+```text
+is:issue repo:binosusai/ideate label:ideate-task
+```
+
+Recommended saved views:
+
+```text
+In Progress: is:issue repo:binosusai/ideate label:ideate-task label:task:in-progress
+Done: is:issue repo:binosusai/ideate label:ideate-task label:task:done is:closed
+Research Stage: is:issue repo:binosusai/ideate label:ideate-task label:stage:research
+Debate Stage: is:issue repo:binosusai/ideate label:ideate-task label:stage:debate
+Planning Stage: is:issue repo:binosusai/ideate label:ideate-task label:stage:planning
+Idea 1 Focus: is:issue repo:binosusai/ideate label:ideate-task label:idea:1
+```
+
+When task state is updated by Ideate:
+
+- `task:in-progress` keeps the issue open.
+- `task:done` closes the issue automatically.
+
+This helps Project board workflows move cards cleanly across To Do, In Progress, and Done.
+
 ## Idea Folder Layout
 
 Each planned idea gets a folder like:

@@ -96,13 +96,14 @@ def _upsert_issue(
     title: str,
     body: str,
     labels: list[str],
+    state: str,
 ) -> None:
     number = _find_issue_number(owner, repo, token, task_key)
     payload = {
         "title": title,
         "body": body,
         "labels": labels,
-        "state": "open",
+        "state": state,
     }
     if number is None:
         _api("POST", f"/repos/{owner}/{repo}/issues", token, payload)
@@ -161,4 +162,5 @@ def sync_agent_tasks(idea: Idea, stage: str, tasks: Iterable[AgentTaskUpdate]) -
         )
         title = f"Idea {idea.id} | {stage.title()} | {task.agent_name}"
         labels = [*base_labels, agent_label, status_label]
-        _upsert_issue(owner, repo_name, token, task_key, title, body, labels)
+        state = "closed" if task.status == "done" else "open"
+        _upsert_issue(owner, repo_name, token, task_key, title, body, labels, state)
