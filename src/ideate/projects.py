@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import subprocess
 from pathlib import Path
@@ -30,7 +31,53 @@ def platform_workspace(root: Path) -> Path:
 
 
 def poc_name(idea: Idea) -> str:
-    return "".join(part for part in idea.slug.split("-") if part) or "poc"
+    # Generate a deterministic one-word codename for POC folder/repo names.
+    # Keeps names short, readable, and stable for a given idea slug.
+    seed = int(hashlib.sha1(idea.slug.encode("utf-8")).hexdigest(), 16)
+    prefixes = [
+        "nova",
+        "luma",
+        "brio",
+        "viva",
+        "zest",
+        "nexa",
+        "kite",
+        "sola",
+        "mira",
+        "rivo",
+        "pico",
+        "alto",
+        "zeno",
+        "coda",
+        "flux",
+        "aero",
+    ]
+    stems = [
+        "beam",
+        "grid",
+        "nest",
+        "loop",
+        "path",
+        "mint",
+        "dock",
+        "mark",
+        "wave",
+        "bolt",
+        "link",
+        "core",
+        "seed",
+        "peak",
+        "mesh",
+        "roam",
+    ]
+    prefix = prefixes[seed % len(prefixes)]
+    stem = stems[(seed // len(prefixes)) % len(stems)]
+
+    # Two letters keep the codename compact while reducing collisions.
+    alpha = "abcdefghijklmnopqrstuvwxyz"
+    suffix_seed = seed // (len(prefixes) * len(stems))
+    suffix = alpha[suffix_seed % 26] + alpha[(suffix_seed // 26) % 26]
+    return f"{prefix}{stem}{suffix}"
 
 
 def poc_dir(root: Path, idea: Idea) -> Path:

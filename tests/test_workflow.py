@@ -29,7 +29,12 @@ def test_full_idea_workflow_creates_openspec_and_poc(tmp_path: Path) -> None:
     assert not (idea / "draft_project").exists()
     assert (idea / "handoff.md").exists()
 
-    poc = tmp_path.parent / "pocs" / "dollarideaagent"
+    pocs_root = tmp_path.parent / "pocs"
+    generated = [p for p in pocs_root.iterdir() if p.is_dir() and p.name != "_common"]
+    assert len(generated) == 1
+    poc = generated[0]
+    assert "-" not in poc.name
+    assert len(poc.name) <= 12
     assert (poc / "frontend" / "index.html").exists()
     assert (poc / "backend" / "app.py").exists()
     assert (poc / "infra" / "terraform" / "main.tf").exists()
