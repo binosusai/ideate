@@ -20,45 +20,39 @@ Unified API key gateway — one key per project that provisions and proxies all 
 Continue to debate. The idea is strong enough for structured criticism, but not yet ready for full engineering crew handoff.
 
 ## Crew Additions
-- Market Researcher: Findings
+- Market Researcher: **Findings:**
+1. **Narrowest ICP:** 5–30 person, VC-backed SaaS startups building integration-heavy products (e.g., workflow automation, SaaS aggregators) that already use Zapier, Make, or RapidAPI and lack dedicated DevOps/security staff.
+2. **Current Alternatives & Willingness-to-Pay:** Teams currently pay for RapidAPI Teams, AWS Secrets Manager, or use brittle homegrown scripts. Willingness-to-pay is highest during rapid onboarding/offboarding, frequent API key rotation, and when audit/compliance pressure grows.
+3. **Entry Pricing Angle:** Free tier covering up to 3 APIs per project, with a paid “Pro” plan unlocking unlimited APIs and Slack onboarding support. Distribution is easiest via dev-focused Slack/Discord communities and partnerships with early-stage accelerators.
 
-- Narrowest ICP: Seed-to-Series B SaaS startups (5–30 devs) building integrations-heavy products (e.g., workflow automation, analytics, SaaS aggregators) that frequently onboard new APIs and already use tools like Zapier, Make, or RapidAPI.
-- Willingness-to-pay signals: Teams currently paying for API management (e.g., RapidAPI Teams, AWS Secrets Manager), or using paid CI/CD tools with secret management add-ons; pain is highest during onboarding/offboarding and key rotation.
-- Current alternatives: Manual key management in vaults (HashiCorp Vault, AWS Secrets Manager), brittle homegrown scripts, or basic API gateways—none offer unified provisioning/proxying with a single project key.
+**Risks:**
+- **Switching Friction:** Security/compliance concerns and existing vault integrations may slow adoption, especially for teams with ingrained workflows.
+- **Perceived Redundancy:** If positioned as “just another secrets manager,” developers may not see enough differentiation to justify switching.
 
-Risks
-
-- High switching friction: Security/compliance concerns and existing vault integrations may slow adoption, especially for teams with established workflows.
-- Tooling inertia: Developers may resist replacing familiar secret management tools unless the new solution is clearly superior and easy to trial.
-
-Recommendation
-
-- Entry wedge: Target VC-backed SaaS startups using Zapier/Make, offering a free tier (up to 3 APIs) and a Slack onboarding bot. Distribute via dev-focused Slack/Discord communities and partner with early-stage accelerators for rapid feedback.
+**Recommendation:**  
+Target integration-heavy SaaS startups in accelerator programs with a free tier and Slack onboarding bot. Focus messaging on “single-key onboarding” and rapid key rotation to differentiate from generic secrets managers.
 - User Researcher: Findings
 
-- Trigger: Developers face friction when onboarding new integrations or rotating credentials—especially during team growth or security audits—requiring manual distribution and mapping of multiple third-party API keys.
-- Workaround: Teams typically store API keys in shared vaults (e.g., AWS Secrets Manager, HashiCorp Vault), use ad hoc scripts for key injection, and rely on tribal knowledge to map which key belongs to which service per project.
-- Sharpest pain: Onboarding a new developer or rotating keys is slow and error-prone—manual steps lead to misconfigurations, delays, and increased risk of credential leaks or outages.
+1. Trigger: Developers are prompted to manage multiple API keys when onboarding new integrations or rotating credentials—especially during team expansion, offboarding, or compliance reviews.
+2. Current workaround: Teams use a mix of manual vault entries (e.g., AWS Secrets Manager, HashiCorp Vault), insecure spreadsheets, or ad-hoc scripts to distribute and rotate keys, leading to lost time and error-prone processes.
+3. Sharpest pain point: Onboarding/offboarding and key rotation are slow, require manual coordination, and create security/compliance gaps—especially when multiple APIs/tools must be updated per project.
 
 Risks
 
-- Security/compliance: Users may hesitate to trust a new proxy with sensitive credentials, especially if it lacks audit trails or enterprise integrations.
-- Adoption inertia: Teams already invested in vault tooling may resist switching unless the new workflow is demonstrably faster and safer.
+1. Security trust barrier: Users may hesitate to trial even a local tool with real secrets, fearing leaks or mishandling, slowing adoption.
+2. Local-only limitation: Lack of team collaboration or cloud sync may reduce perceived utility for distributed teams, limiting week-one retention.
 
 Recommendation
 
-- First-run workflow: CLI tool initializes a project, prompts for 2–3 sandbox API keys, generates a single project key, and starts a local proxy—demoing successful routing to sandbox APIs with visible logs. Success = new dev onboarded and making proxied API calls in under 10 minutes.
-- Technical Scout: Findings
+- Minimum first-run workflow: CLI tool (`ukg`) initializes a project, adds at least two third-party API keys, generates a unified key, and launches a local proxy. Success is a developer making a real API call via the unified key within 30 minutes of install—proving immediate reduction in manual steps.
+- Technical Scout: **Findings:**
+1. **Local Proxy Feasibility:** A basic HTTP proxy that maps a unified project key to stored third-party API keys is achievable using standard Python/Node libraries (e.g., http-proxy, Flask, FastAPI) with local file-backed config and encryption (libsodium or cryptography). No external dependencies required.
+2. **Mocking Third-Party APIs:** For demo purposes, actual third-party API calls should be mocked (e.g., intercept requests and return canned responses) to avoid handling real credentials and to simplify setup. This enables rapid iteration and safe demoing.
+3. **Minimal Security Scope:** Local file encryption for key storage is sufficient for MVP. Advanced features (multi-user, cloud sync, audit logging) can be deferred; CLI-based onboarding and rotation are enough to prove core value.
 
-- Minimal Architecture: A local CLI tool can generate a unified project API key, store mappings in a file (YAML/JSON), and run a lightweight proxy server that routes requests to 2–3 sandboxed third-party APIs using stored keys. No cloud or user auth needed.
-- Mocking Needs: Third-party APIs should be mocked or use public sandbox endpoints to avoid real credential exposure and simplify demo setup. Key rotation can be simulated by updating the config file and reloading the proxy.
-- Integration Constraints: The MVP avoids integrating with real secret managers (e.g., AWS Secrets Manager, Vault) and skips multi-user access, focusing solely on local developer experience and CLI-driven workflows.
+**Risks:**
+1. **Security Perception:** Even with local-only storage, early users may distrust a new tool managing sensitive keys, slowing adoption or feedback.
+2. **Proxy Complexity:** Supporting diverse third-party API auth schemes (headers, query params, OAuth) may require early abstraction or hardcoded logic, risking brittle code or demo limitations.
 
-Risks
-
-- Security Gaps: Local file storage and lack of user authentication are insecure for real use; this is acceptable for a POC but must be flagged to avoid misuse.
-- API Compatibility: Some third-party APIs may have non-standard auth flows or rate limits, complicating proxy logic if not carefully selected for the demo.
-
-Recommendation
-
-- Proceed with a CLI-first, local-only MVP using mocked or sandbox APIs, clearly labeling it as a demo to avoid security misunderstandings. Defer secret manager and multi-user integration until core proxying value is proven.
+**Recommendation:**  
+Build the MVP with a local proxy and file-backed key store, mocking third-party APIs. Explicitly document security limitations and focus on a CLI-driven demo to validate workflow and gather feedback before expanding scope.
