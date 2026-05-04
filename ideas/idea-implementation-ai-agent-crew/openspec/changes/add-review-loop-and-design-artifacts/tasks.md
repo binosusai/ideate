@@ -33,11 +33,11 @@
 - [ ] Define the exact output contract for both roles.
 - [ ] Include those outputs in planning artifacts used by POC generation.
 
-## Documentation Artifacts — ⏳ Deferred
-- [ ] Generate a Mermaid component diagram for each POC.
-- [ ] Embed the Mermaid diagram in the generated README.
-- [ ] Add the same or richer architecture view in `docs/architecture.md`.
-- [ ] Add tests or fixture checks for Mermaid inclusion in generated output.
+## Documentation Artifacts — ✅ Done (May 2026)
+- [x] Generate a Mermaid component diagram for each POC.
+- [x] Embed the Mermaid diagram in the generated README.
+- [x] Add the same or richer architecture view in `docs/architecture.md`.
+- [x] Add tests or fixture checks for Mermaid inclusion in generated output.
 
 ## Future Hosted Verification — ⏳ Deferred
 - [ ] Compare free-tier or near-free options for frontend hosting.

@@ -48,13 +48,24 @@ def test_full_idea_workflow_creates_openspec_and_poc(tmp_path: Path, monkeypatch
     assert (poc / ".github" / "workflows" / "poc-ci.yml").exists()
     assert (poc / "docs" / "local_setup.md").exists()
     assert (poc / "docs" / "deployment.md").exists()
+    assert (poc / "docs" / "architecture.md").exists()
     assert (poc / "docs" / "devops.md").exists()
     assert (poc / "PROJECT_RULES.md").exists()
     assert (tmp_path.parent / "pocs" / "_common" / "README.md").exists()
 
+    poc_readme = (poc / "README.md").read_text(encoding="utf-8")
+    architecture = (poc / "docs" / "architecture.md").read_text(encoding="utf-8")
     terraform = (poc / "infra" / "terraform" / "main.tf").read_text(encoding="utf-8")
     workflow = (poc / ".github" / "workflows" / "poc-ci.yml").read_text(encoding="utf-8")
     rules = (poc / "PROJECT_RULES.md").read_text(encoding="utf-8")
+
+    assert "```mermaid" in poc_readme
+    assert "flowchart LR" in poc_readme
+    assert "## Component Diagram" in poc_readme
+    assert architecture.count("```mermaid") >= 2
+    assert "## Request Flow" in architecture
+    assert "sequenceDiagram" in architecture
+
     assert "terraform-modules/vercel-static-site" in terraform
     assert "your-org/platform/.github/workflows/python-poc-ci.yml@main" in workflow
     assert "rules/security.md" in rules

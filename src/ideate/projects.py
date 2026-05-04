@@ -427,6 +427,21 @@ def write_draft_project(project: Path, idea: Idea, platform: Path, context: dict
     write_text(project / "docs" / "engineering_brief.md", engineering_brief_doc(idea, context))
 
 
+def component_diagram_mermaid(idea: Idea, context: dict[str, str]) -> str:
+    use_case = context.get("use_case", "workflow-assistant")
+    return (
+        "flowchart LR\n"
+        f"    U[\"User\"] --> F[\"Frontend\\n({use_case})\"]\n"
+        f"    F --> B[\"Backend API\\n{idea.title[:48]}\"]\n"
+        "    B --> D[(SQLite Runtime DB)]\n"
+        "    B --> X[\"External Services\\n(Mock/Sandbox)\"]\n"
+        "    CI[\"GitHub Actions CI\"] --> B\n"
+        "    CI --> F\n"
+        "    I[\"Terraform Infra\"] -. deploy .-> F\n"
+        "    I -. deploy .-> B\n"
+    )
+
+
 def project_readme(idea: Idea, context: dict[str, str]) -> str:
     research = context.get("research", "")
     debate = context.get("debate", "")
@@ -455,6 +470,12 @@ def project_readme(idea: Idea, context: dict[str, str]) -> str:
         ```
 
         Then open `http://localhost:8000`.
+
+        ## Component Diagram
+
+        ```mermaid
+        {component_diagram_mermaid(idea, context)}
+        ```
         """,
     )
     extra: list[str] = []
@@ -1181,6 +1202,27 @@ def architecture_doc(idea: Idea, context: dict[str, str]) -> str:
         - `poc.sqlite3`: local runtime database, ignored by git
         - `infra/`: Terraform placeholders for production resources
         - `.github/workflows/`: CI checks
+
+        ## Component Diagram
+        ```mermaid
+        {component_diagram_mermaid(idea, context)}
+        ```
+
+        ## Request Flow
+        ```mermaid
+        sequenceDiagram
+            participant User
+            participant Frontend
+            participant Backend
+            participant DB as SQLite
+
+            User->>Frontend: Enter input and submit
+            Frontend->>Backend: POST /api/run
+            Backend->>DB: Persist run and recommendation
+            DB-->>Backend: Stored row id
+            Backend-->>Frontend: JSON recommendation
+            Frontend-->>User: Render next action
+        ```
 
         ## Production Upgrade Path
         Replace SQLite with Neon or Supabase Postgres, add Clerk or Firebase Auth, deploy frontend to Vercel, and deploy backend to AWS.
