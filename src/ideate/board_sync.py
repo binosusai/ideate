@@ -122,45 +122,51 @@ def sync_agent_tasks(idea: Idea, stage: str, tasks: Iterable[AgentTaskUpdate]) -
     owner, repo_name = repo.split("/", 1)
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
-    base_labels = [
-        "ideate-task",
-        f"idea:{idea.id}",
-        f"stage:{_slug(stage, max_len=20)}",
-    ]
-    static_labels = {
-        "ideate-task": ("1f6feb", "Ideate agent task item"),
-        f"idea:{idea.id}": ("bfd4f2", "Idea identifier"),
-        f"stage:{_slug(stage, max_len=20)}": ("d4c5f9", "Pipeline stage"),
-        "task:in-progress": ("f9d458", "Agent task currently running"),
-        "task:done": ("2da44e", "Agent task completed"),
-    }
-    for name, (color, desc) in static_labels.items():
-        _ensure_label(owner, repo_name, token, name, color, desc)
+    try:
+        base_labels = [
+            "ideate-task",
+            f"idea:{idea.id}",
+            f"stage:{_slug(stage, max_len=20)}",
+        ]
+        static_labels = {
+            "ideate-task": ("1f6feb", "Ideate agent task item"),
+            f"idea:{idea.id}": ("bfd4f2", "Idea identifier"),
+            f"stage:{_slug(stage, max_len=20)}": ("d4c5f9", "Pipeline stage"),
+            "task:in-progress": ("f9d458", "Agent task currently running"),
+            "task:done": ("2da44e", "Agent task completed"),
+        }
+        for name, (color, desc) in static_labels.items():
+            _ensure_label(owner, repo_name, token, name, color, desc)
 
-    for task in tasks:
-        agent_label = f"agent:{_slug(task.agent_name, max_len=20)}"
-        _ensure_label(owner, repo_name, token, agent_label, "fbca04", "Agent role")
-        status_label = "task:done" if task.status == "done" else "task:in-progress"
-        task_key = f"ideate-task:{idea.id}:{_slug(stage, 20)}:{_slug(task.agent_name, 20)}"
+        for task in tasks:
+            agent_label = f"agent:{_slug(task.agent_name, max_len=20)}"
+            _ensure_label(owner, repo_name, token, agent_label, "fbca04", "Agent role")
+            status_label = "task:done" if task.status == "done" else "task:in-progress"
+            task_key = f"ideate-task:{idea.id}:{_slug(stage, 20)}:{_slug(task.agent_name, 20)}"
 
-        output_block = task.output.strip()
-        if output_block:
-            output_block = output_block[:3500]
-            details = f"\n\n## Agent Output\n\n{output_block}"
-        else:
-            details = "\n\n## Agent Output\n\nPending..."
+            output_block = task.output.strip()
+            if output_block:
+                output_block = output_block[:3500]
+                details = f"\n\n## Agent Output\n\n{output_block}"
+            else:
+                details = "\n\n## Agent Output\n\nPending..."
 
-        body = (
-            f"<!-- {task_key} -->\n"
-            f"# Ideate Agent Task\n\n"
-            f"- Idea: #{idea.id} {idea.title}\n"
-            f"- Stage: {stage}\n"
-            f"- Agent: {task.agent_name}\n"
-            f"- Status: {task.status}\n"
-            f"- Updated: {now}"
-            + details
-        )
-        title = f"Idea {idea.id} | {stage.title()} | {task.agent_name}"
-        labels = [*base_labels, agent_label, status_label]
-        state = "closed" if task.status == "done" else "open"
-        _upsert_issue(owner, repo_name, token, task_key, title, body, labels, state)
+            body = (
+                f"<!-- {task_key} -->\n"
+                f"# Ideate Agent Task\n\n"
+                f"- Idea: #{idea.id} {idea.title}\n"
+                f"- Stage: {stage}\n"
+                f"- Agent: {task.agent_name}\n"
+                f"- Status: {task.status}\n"
+                f"- Updated: {now}"
+                + details
+            )
+            title = f"Idea {idea.id} | {stage.title()} | {task.agent_name}"
+            labels = [*base_labels, agent_label, status_label]
+            state = "closed" if task.status == "done" else "open"
+            _upsert_issue(owner, repo_name, token, task_key, title, body, labels, state)
+    except error.HTTPError as exc:
+        # Fail open: board visibility should not block pipeline delivery.
+        print(f"[ideate] task board sync skipped due to GitHub API error {exc.code}: {exc.reason}")
+    except (error.URLError, TimeoutError) as exc:
+        print(f"[ideate] task board sync skipped due to network error: {exc}")
