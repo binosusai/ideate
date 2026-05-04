@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import json
 import os
 import re
 from dataclasses import dataclass
@@ -241,9 +242,19 @@ def run_debate_crew_strict(
             member_name = _member_display_name("debate", member)
             opening_outputs[member_name] = _run_member("debate", member, idea, context, opening_outputs)
 
+    targeted_followups = ""
+    if os.environ.get("IDEATE_DEBATE_RESEARCH_FOLLOWUP", "1") == "1":
+        followup_questions = _extract_targeted_research_questions(idea, context, opening_outputs)
+        if followup_questions:
+            followup_answers = _run_targeted_research_followups(idea, context, followup_questions)
+            if followup_answers:
+                targeted_followups = _format_targeted_research_followups(followup_answers)
+
     round_two_context = context | {
         "debate_round_1": "\n".join(f"{k}: {v}" for k, v in opening_outputs.items())
     }
+    if targeted_followups:
+        round_two_context = round_two_context | {"targeted_research_followups": targeted_followups}
     if os.environ.get("IDEATE_PARALLEL", "1") == "1":
         rebuttal_outputs = _run_members_parallel(
             "debate",
@@ -287,7 +298,14 @@ def run_debate_crew_strict(
 
     outputs = {
         _member_display_name("debate", member): (
-            "Round 1 - Opening Statement:\n"
+            (
+                "Targeted Research Follow-ups:\n"
+                + targeted_followups
+                + "\n\n"
+                if targeted_followups
+                else ""
+            )
+            + "Round 1 - Opening Statement:\n"
             + opening_outputs[_member_display_name("debate", member)]
             + "\n\nRound 2 - Rebuttal:\n"
             + rebuttal_outputs[_member_display_name("debate", member)]
@@ -558,6 +576,172 @@ def _member_prompt(
         + (f"\n\nRound instruction: {round_note}" if round_note else "")
     )
     return system_prompt, user_prompt
+
+
+def _extract_targeted_research_questions(
+    idea: Idea,
+    context: dict[str, str],
+    opening_outputs: dict[str, str],
+) -> list[str]:
+    max_questions = 3
+    joined = "\n".join(f"{name}: {text}" for name, text in opening_outputs.items())
+
+    llm_questions = _llm_extract_targeted_research_questions(idea, context, joined, max_questions)
+    if llm_questions:
+        return llm_questions
+
+    # Fallback heuristic: extract explicit question lines from opening statements.
+    candidates: list[str] = []
+    for line in joined.splitlines():
+        stripped = line.strip(" -\t")
+        if "?" in stripped and 12 <= len(stripped) <= 220:
+            q = stripped.split("?", 1)[0].strip() + "?"
+            candidates.append(q)
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for q in candidates:
+        key = re.sub(r"\s+", " ", q.lower()).strip()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(q)
+        if len(deduped) >= max_questions:
+            break
+    return deduped
+
+
+def _llm_extract_targeted_research_questions(
+    idea: Idea,
+    context: dict[str, str],
+    debate_opening_text: str,
+    max_questions: int,
+) -> list[str]:
+    if not os.environ.get("OPENAI_API_KEY"):
+        return []
+    if os.environ.get("IDEATE_FORCE_RULE_BASED") == "1":
+        return []
+    try:
+        from openai import OpenAI  # type: ignore[import]
+    except Exception:
+        return []
+
+    model = os.environ.get("IDEATE_MODEL_DEBATE_FOLLOWUP", os.environ.get("IDEATE_MODEL_DEBATE", "gpt-4.1-mini"))
+    system_prompt = (
+        "You extract only high-impact follow-up research questions from a debate. "
+        f"Return strict JSON array with up to {max_questions} concise questions."
+    )
+    user_prompt = (
+        f"Idea: {idea.title}\n"
+        f"Category: {idea.category}\n"
+        f"Review feedback: {context.get('review_feedback', '')[:700]}\n\n"
+        "Debate opening outputs:\n"
+        f"{debate_opening_text[:4500]}\n\n"
+        "Output only JSON array of strings."
+    )
+    try:
+        client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+        response = client.chat.completions.create(
+            model=model,
+            temperature=0.2,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        )
+        raw = ((response.choices[0].message.content or "") if response.choices else "").strip()
+        if not raw:
+            return []
+        parsed = json.loads(raw)
+        if not isinstance(parsed, list):
+            return []
+        cleaned: list[str] = []
+        for item in parsed:
+            if not isinstance(item, str):
+                continue
+            q = item.strip()
+            if not q:
+                continue
+            if "?" not in q:
+                q = q.rstrip(".") + "?"
+            cleaned.append(q[:220])
+            if len(cleaned) >= max_questions:
+                break
+        return cleaned
+    except Exception:
+        return []
+
+
+def _run_targeted_research_followups(
+    idea: Idea,
+    context: dict[str, str],
+    questions: list[str],
+) -> list[tuple[str, str]]:
+    answers: list[tuple[str, str]] = []
+    for question in questions[:3]:
+        answer = _llm_targeted_research_answer(idea, context, question)
+        if not answer:
+            answer = _rule_based_targeted_research_answer(idea, question)
+        answers.append((question, answer[:600]))
+    return answers
+
+
+def _llm_targeted_research_answer(idea: Idea, context: dict[str, str], question: str) -> str | None:
+    if not os.environ.get("OPENAI_API_KEY"):
+        return None
+    if os.environ.get("IDEATE_FORCE_RULE_BASED") == "1":
+        return None
+    try:
+        from openai import OpenAI  # type: ignore[import]
+    except Exception:
+        return None
+
+    model = os.environ.get("IDEATE_MODEL_RESEARCH_FOLLOWUP", os.environ.get("IDEATE_MODEL_RESEARCH", "gpt-4.1-mini"))
+    system_prompt = (
+        "You are a targeted research analyst. Answer with concise, evidence-style bullets. "
+        "Include assumptions where uncertainty exists. Keep under 140 words."
+    )
+    user_prompt = (
+        f"Idea: {idea.title}\n"
+        f"Category: {idea.category}\n"
+        f"Why: {idea.why or 'n/a'}\n"
+        f"Previous research: {context.get('previous_research', '')[:1800]}\n"
+        f"Previous debate: {context.get('previous_debate', '')[:1200]}\n"
+        f"Review feedback: {context.get('review_feedback', '')[:900]}\n\n"
+        f"Question: {question}"
+    )
+    try:
+        client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+        response = client.chat.completions.create(
+            model=model,
+            temperature=0.2,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        )
+        output = ((response.choices[0].message.content or "") if response.choices else "").strip()
+        return output or None
+    except Exception:
+        return None
+
+
+def _rule_based_targeted_research_answer(idea: Idea, question: str) -> str:
+    q = question.lower()
+    if any(word in q for word in ("price", "willing", "pay", "market", "icp")):
+        return market_researcher(idea, {})
+    if any(word in q for word in ("user", "workflow", "onboarding", "adoption", "pain")):
+        return user_researcher(idea, {})
+    return technical_scout(idea, {})
+
+
+def _format_targeted_research_followups(items: list[tuple[str, str]]) -> str:
+    lines: list[str] = []
+    for index, (q, a) in enumerate(items, start=1):
+        lines.append(f"Q{index}. {q}")
+        lines.append(f"A{index}. {a}")
+        lines.append("")
+    return "\n".join(lines).strip()
 
 
 def _llm_member_output(
