@@ -446,9 +446,9 @@ def write_common_poc_infra(workspace: Path, platform: Path) -> None:
 
 def write_draft_project(project: Path, idea: Idea, platform: Path, context: dict[str, str]) -> None:
     write_text(project / "backend" / "app.py", backend_app(idea, context))
-    write_text(project / "frontend" / "index.html", frontend_index(idea))
-    write_text(project / "frontend" / "styles.css", frontend_styles())
-    write_text(project / "frontend" / "app.js", frontend_app_js())
+    write_text(project / "frontend" / "index.html", frontend_index(idea, context))
+    write_text(project / "frontend" / "styles.css", frontend_styles(context))
+    write_text(project / "frontend" / "app.js", frontend_app_js(context))
     write_text(project / "infra" / "terraform" / "main.tf", terraform_main(idea, platform))
     write_text(project / ".github" / "workflows" / "poc-ci.yml", github_actions(platform))
     write_text(project / ".env.example", env_example())
@@ -462,18 +462,16 @@ def write_draft_project(project: Path, idea: Idea, platform: Path, context: dict
 
 
 def project_readme(idea: Idea, context: dict[str, str]) -> str:
-    return md(
+    research = context.get("research", "")
+    debate = context.get("debate", "")
+    plan = context.get("plan", "")
+    base = md(
         f"Draft POC: {idea.title}",
         f"""
         This repository is generated from approved idea artifacts and should represent a runnable first draft for the approved use case.
 
         ## Use Case
         `{context.get("use_case", "workflow-assistant")}`
-
-        ## Inputs Applied To This Draft
-        - Research: {context.get("research_summary", "")}
-        - Debate: {context.get("debate_summary", "")}
-        - Plan: {context.get("plan_summary", "")}
 
         ## What Is Included
         - Runnable backend API in `backend/`
@@ -493,9 +491,21 @@ def project_readme(idea: Idea, context: dict[str, str]) -> str:
         Then open `http://localhost:8000`.
         """,
     )
+    extra: list[str] = []
+    if research:
+        extra.append(f"## Research\n\n{research}")
+    if debate:
+        extra.append(f"## Debate\n\n{debate}")
+    if plan:
+        extra.append(f"## Implementation Plan\n\n{plan}")
+    if extra:
+        return base + "\n" + "\n\n---\n\n".join(extra) + "\n"
+    return base
 
 
 def backend_app(idea: Idea, context: dict[str, str]) -> str:
+    if context.get("use_case") == "api-key-gateway":
+        return _gateway_backend_app(idea, context)
     plan_summary = context.get("plan_summary", "")
     research_summary = context.get("research_summary", "")
     use_case = context.get("use_case", "workflow-assistant")
@@ -594,7 +604,203 @@ if __name__ == "__main__":
 '''
 
 
-def frontend_index(idea: Idea) -> str:
+def _gateway_backend_app(idea: Idea, context: dict[str, str]) -> str:
+    plan_summary = context.get("plan_summary", "")
+    research_summary = context.get("research_summary", "")
+    use_case = context.get("use_case", "api-key-gateway")
+    return f'''from __future__ import annotations
+
+import json
+import secrets
+import sqlite3
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import urlparse
+
+ROOT = Path(__file__).resolve().parents[1]
+DB = ROOT / "poc.sqlite3"
+FRONTEND = ROOT / "frontend"
+IDEA_TITLE = {idea.title!r}
+IDEA_CATEGORY = {idea.category!r}
+USE_CASE = {use_case!r}
+PLAN_SUMMARY = {plan_summary!r}
+RESEARCH_SUMMARY = {research_summary!r}
+
+
+def init_db() -> None:
+    with sqlite3.connect(DB) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS projects (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              name TEXT NOT NULL UNIQUE,
+              api_key TEXT NOT NULL,
+              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS proxy_runs (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              project_id INTEGER REFERENCES projects(id),
+              provider TEXT NOT NULL,
+              payload TEXT NOT NULL,
+              response TEXT NOT NULL,
+              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS runs (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              input TEXT NOT NULL,
+              recommendation TEXT NOT NULL,
+              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+
+def mock_proxy_response(provider: str, payload: str, project_name: str) -> str:
+    return (
+        f"[MOCK PROXY] provider={{provider}} project={{project_name}} "
+        f"signal={{RESEARCH_SUMMARY[:120]}} payload_echo={{payload[:200]}}"
+    )
+
+
+class Handler(SimpleHTTPRequestHandler):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, directory=str(FRONTEND), **kwargs)
+
+    def do_GET(self):
+        path = urlparse(self.path).path
+        if path == "/api/health":
+            self.send_json(
+                {{
+                    "ok": True,
+                    "idea": IDEA_TITLE,
+                    "category": IDEA_CATEGORY,
+                    "use_case": USE_CASE,
+                    "plan_summary": PLAN_SUMMARY[:200],
+                }}
+            )
+            return
+        if path == "/api/projects":
+            with sqlite3.connect(DB) as conn:
+                rows = conn.execute(
+                    "SELECT id, name, api_key, created_at FROM projects ORDER BY created_at DESC"
+                ).fetchall()
+            self.send_json(
+                [{{"id": r[0], "name": r[1], "api_key": r[2], "created_at": r[3]}} for r in rows]
+            )
+            return
+        super().do_GET()
+
+    def do_POST(self):
+        path = urlparse(self.path).path
+        length = int(self.headers.get("content-length", "0"))
+        body = json.loads(self.rfile.read(length) or b"{{}}")
+
+        if path == "/api/projects":
+            name = str(body.get("name", "")).strip()
+            if not name:
+                self.send_error(400, "name required")
+                return
+            api_key = f"pk_{{secrets.token_hex(16)}}"
+            try:
+                with sqlite3.connect(DB) as conn:
+                    conn.execute(
+                        "INSERT INTO projects(name, api_key) VALUES (?, ?)", (name, api_key)
+                    )
+            except sqlite3.IntegrityError:
+                self.send_error(409, "project name already exists")
+                return
+            self.send_json({{"name": name, "api_key": api_key}})
+            return
+
+        if path == "/api/proxy/mock":
+            api_key = str(body.get("api_key", ""))
+            provider = str(body.get("provider", "openai"))
+            payload = str(body.get("payload", ""))
+            with sqlite3.connect(DB) as conn:
+                row = conn.execute(
+                    "SELECT id, name FROM projects WHERE api_key = ?", (api_key,)
+                ).fetchone()
+            if not row:
+                self.send_error(401, "invalid api_key")
+                return
+            project_id, project_name = row
+            response = mock_proxy_response(provider, payload, project_name)
+            with sqlite3.connect(DB) as conn:
+                conn.execute(
+                    "INSERT INTO proxy_runs(project_id, provider, payload, response) VALUES (?,?,?,?)",
+                    (project_id, provider, payload, response),
+                )
+            self.send_json({{"ok": True, "provider": provider, "response": response}})
+            return
+
+        if path == "/api/run":
+            raw = str(body.get("input", ""))
+            recommendation = (
+                f"POC recommendation for {{IDEA_TITLE}} ({{USE_CASE}}): "
+                f"plan emphasis -> {{PLAN_SUMMARY[:200]}} "
+                f"research signal -> {{RESEARCH_SUMMARY[:180]}} "
+                f"input reviewed -> {{raw[:220]}}"
+            )
+            with sqlite3.connect(DB) as conn:
+                conn.execute(
+                    "INSERT INTO runs(input, recommendation) VALUES (?, ?)",
+                    (raw, recommendation),
+                )
+            self.send_json({{"recommendation": recommendation}})
+            return
+
+        self.send_error(404)
+
+    def send_json(self, payload):
+        data = json.dumps(payload).encode("utf-8")
+        self.send_response(200)
+        self.send_header("content-type", "application/json")
+        self.send_header("content-length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+
+def main() -> None:
+    init_db()
+    server = ThreadingHTTPServer(("127.0.0.1", 8000), Handler)
+    print("POC running at http://localhost:8000")
+    print("Press Ctrl+C to stop.")
+    server.serve_forever()
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+
+def frontend_index(idea: Idea, context: dict[str, str] | None = None) -> str:
+    gateway_panel = ""
+    if context and context.get("use_case") == "api-key-gateway":
+        gateway_panel = """
+        <section class="gateway-panel">
+          <h2>Project Key Management</h2>
+
+          <div class="field-row">
+            <input type="text" id="project-name" placeholder="Project name (e.g. team-alpha)" />
+            <button id="create-project-btn">Create Key</button>
+          </div>
+          <div class="key-display" id="key-display" hidden>
+            <label for="issued-key">Issued API Key</label>
+            <input type="text" id="issued-key" readonly />
+          </div>
+
+          <h2>Mock Proxy</h2>
+          <div class="field-row">
+            <input type="text" id="proxy-key" placeholder="API key (pk_...)" />
+            <input type="text" id="provider-name" placeholder="Provider" value="openai" />
+          </div>
+          <textarea id="proxy-payload" rows="4" placeholder='{"prompt": "hello world"}'></textarea>
+          <button id="run-proxy-btn">Run Mock Proxy</button>
+          <pre id="proxy-result"></pre>
+        </section>
+"""
     return f'''<!doctype html>
 <html lang="en">
   <head>
@@ -620,7 +826,7 @@ def frontend_index(idea: Idea) -> str:
           <h2>Recommendation</h2>
           <p id="result">Run the POC to generate the first recommendation.</p>
         </section>
-      </section>
+{gateway_panel}      </section>
     </main>
     <script src="./app.js"></script>
   </body>
@@ -628,14 +834,81 @@ def frontend_index(idea: Idea) -> str:
 '''
 
 
-def frontend_styles() -> str:
+def frontend_styles(context: dict[str, str] | None = None) -> str:
+    gateway_css = ""
+    if context and context.get("use_case") == "api-key-gateway":
+        gateway_css = """
+.gateway-panel {
+  margin-top: 32px;
+  border-top: 1px solid #ece8dc;
+  padding-top: 24px;
+}
+
+.gateway-panel h2 {
+  font-size: 18px;
+  margin: 0 0 12px;
+}
+
+.field-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.field-row input {
+  flex: 1;
+  min-width: 160px;
+  border: 1px solid #c7c4ba;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font: inherit;
+}
+
+.key-display {
+  margin-bottom: 16px;
+  display: grid;
+  gap: 4px;
+}
+
+.key-display input {
+  font-family: monospace;
+  background: #f0ece4;
+  border: 1px solid #c7c4ba;
+  border-radius: 6px;
+  padding: 8px 10px;
+  width: 100%;
+}
+
+#proxy-payload {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid #c7c4ba;
+  border-radius: 6px;
+  padding: 10px;
+  font: inherit;
+  margin-bottom: 10px;
+}
+
+#proxy-result {
+  background: #f0ece4;
+  border: 1px solid #c7c4ba;
+  border-radius: 6px;
+  padding: 12px;
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  min-height: 40px;
+  margin-top: 12px;
+}
+"""
     return """* {
   box-sizing: border-box;
-}
+}""" + gateway_css + """
 
 body {
   margin: 0;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif;
   color: #202124;
   background: #f7f5ef;
 }
@@ -719,27 +992,79 @@ button {
 """
 
 
-def frontend_app_js() -> str:
-    return """const form = document.querySelector("#idea-form");
-const input = document.querySelector("#idea-input");
-const result = document.querySelector("#result");
+def frontend_app_js(context: dict[str, str] | None = None) -> str:
+    gateway_js = ""
+    if context and context.get("use_case") == "api-key-gateway":
+        gateway_js = """
+const createProjectBtn = document.querySelector("#create-project-btn");
+const projectNameInput = document.querySelector("#project-name");
+const keyDisplay = document.querySelector("#key-display");
+const issuedKey = document.querySelector("#issued-key");
+const proxyKeyInput = document.querySelector("#proxy-key");
+const providerInput = document.querySelector("#provider-name");
+const proxyPayload = document.querySelector("#proxy-payload");
+const runProxyBtn = document.querySelector("#run-proxy-btn");
+const proxyResult = document.querySelector("#proxy-result");
 
-form.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  result.textContent = "Running...";
+createProjectBtn.addEventListener("click", async () => {
+  const name = projectNameInput.value.trim();
+  if (!name) { alert("Enter a project name"); return; }
   try {
-    const response = await fetch("/api/run", {
+    const res = await fetch("/api/projects", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ input: input.value }),
+      body: JSON.stringify({ name }),
     });
-    const data = await response.json();
-    result.textContent = data.recommendation;
-  } catch (error) {
-    result.textContent = `POC request failed: ${error}`;
+    if (!res.ok) { throw new Error(`${res.status} ${await res.text()}`); }
+    const data = await res.json();
+    issuedKey.value = data.api_key;
+    keyDisplay.removeAttribute("hidden");
+  } catch (err) {
+    alert(`Failed: ${err}`);
+  }
+});
+
+runProxyBtn.addEventListener("click", async () => {
+  const api_key = proxyKeyInput.value.trim();
+  if (!api_key) { alert("Enter an API key"); return; }
+  proxyResult.textContent = "Running proxy...";
+  try {
+    const res = await fetch("/api/proxy/mock", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        api_key,
+        provider: providerInput.value.trim() || "openai",
+        payload: proxyPayload.value,
+      }),
+    });
+    const data = await res.json();
+    proxyResult.textContent = JSON.stringify(data, null, 2);
+  } catch (err) {
+    proxyResult.textContent = `Error: ${err}`;
   }
 });
 """
+    return f"""const form = document.querySelector("#idea-form");
+const input = document.querySelector("#idea-input");
+const result = document.querySelector("#result");
+
+form.addEventListener("submit", async (event) => {{
+  event.preventDefault();
+  result.textContent = "Running...";
+  try {{
+    const response = await fetch("/api/run", {{
+      method: "POST",
+      headers: {{ "content-type": "application/json" }},
+      body: JSON.stringify({{ input: input.value }}),
+    }});
+    const data = await response.json();
+    result.textContent = data.recommendation;
+  }} catch (error) {{
+    result.textContent = `POC request failed: ${{error}}`;
+  }}
+}});
+{gateway_js}"""
 
 
 def terraform_main(idea: Idea, platform: Path) -> str:
