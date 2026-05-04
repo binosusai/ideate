@@ -264,12 +264,7 @@ def _init_poc_repo(project: Path, idea: Idea) -> None:
             text=True,
         )
         if remote_check.stdout.strip():
-            push_result = subprocess.run(
-                ["git", "push"],
-                cwd=project,
-                capture_output=True,
-                text=True,
-            )
+            push_result = _push_with_auth_retry(project, org, base_repo_name)
             if push_result.returncode == 0:
                 print(f"[ideate] Pushed iteration to existing remote for {org}/{base_repo_name}")
             else:
@@ -312,7 +307,10 @@ def _init_poc_repo(project: Path, idea: Idea) -> None:
                 check=True,
                 capture_output=True,
             )
-            subprocess.run(["git", "push"], cwd=project, check=True, capture_output=True)
+            push_result = _push_with_auth_retry(project, org, base_repo_name)
+            if push_result.returncode != 0:
+                message = push_result.stderr.strip() or push_result.stdout.strip() or "unknown error"
+                raise RuntimeError(f"Push failed for existing remote {org}/{base_repo_name}: {message}")
             print(f"[ideate] Pushed iteration to existing remote for {org}/{base_repo_name}")
         else:
             print(f"[ideate] No changes detected in existing remote repo {base_repo_name}; nothing to commit.")
@@ -345,6 +343,36 @@ def _remote_repo_exists(org: str, repo_name: str) -> bool:
         text=True,
     )
     return result.returncode == 0
+
+
+def _push_with_auth_retry(project: Path, org: str, repo_name: str):
+    push_result = subprocess.run(
+        ["git", "push"],
+        cwd=project,
+        capture_output=True,
+        text=True,
+    )
+    if push_result.returncode == 0:
+        return push_result
+
+    token = (os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or "").strip()
+    if not token:
+        return push_result
+
+    authed_remote = f"https://x-access-token:{token}@github.com/{org}/{repo_name}.git"
+    subprocess.run(
+        ["git", "remote", "set-url", "origin", authed_remote],
+        cwd=project,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return subprocess.run(
+        ["git", "push"],
+        cwd=project,
+        capture_output=True,
+        text=True,
+    )
 
 
 def _attach_project_to_existing_remote(project: Path, org: str, repo_name: str, idea: Idea) -> None:
