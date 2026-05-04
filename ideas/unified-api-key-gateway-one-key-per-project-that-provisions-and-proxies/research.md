@@ -21,78 +21,72 @@ Continue to debate. The idea is strong enough for structured criticism, but not 
 
 ## Crew Additions
 - Market Researcher: - ICP Segments:  
-  - SaaS startups (5–100 devs) integrating multiple third-party APIs (payments, comms, analytics)  
-  - Agencies building/maintaining client apps with varied API dependencies  
-  - DevOps/Platform teams at mid-size tech firms managing API credentials at scale  
+  - SaaS startups (5–50 devs) integrating multiple third-party APIs (payments, analytics, messaging)  
+  - Agencies building/maintaining client apps with varied API integrations  
+  - DevOps/Platform teams at mid-sized tech firms managing internal/external API access
 
 - Willingness-to-Pay Signals:  
-  - High: Teams citing security/audit pain, onboarding friction, or frequent API churn  
-  - Medium: Agencies billing for managed services, seeking operational efficiency  
-  - Low: Solo devs, hobby projects, or orgs with strict in-house credential policies  
+  - Teams citing security/audit concerns around API key sprawl  
+  - Frequent onboarding/offboarding of devs or tools  
+  - Pain around rotating/revoking keys during incidents  
+  - Current spend on API management/security tools
 
 - Competing Tools:  
-  - Vaults (HashiCorp Vault, AWS Secrets Manager) — focus on storage, not proxying or unified key  
-  - API gateways (Kong, Tyk) — traffic management, not credential abstraction  
-  - Env management (Doppler, 1Password) — storage/sharing, not dynamic provisioning  
+  - Vaults (HashiCorp Vault, AWS Secrets Manager) — focus on secrets, not unified API key provisioning  
+  - API gateways (Kong, Tyk) — proxy APIs, but don’t unify third-party key management  
+  - Internal scripts/spreadsheets — manual, error-prone
 
 - Entry Pricing Angle:  
-  - Freemium: Free for 1 project, $29–$99/mo for teams (usage/seat-based)  
+  - $49–$99/mo per project for up to X third-party integrations; free tier for 1–2 integrations
 
-- Narrow Wedge for Distribution:  
-  - Target agencies managing multiple client projects—offer plug-and-play onboarding and white-labeling to reduce their credential chaos.
+- Narrow Wedge for Easiest Distribution:  
+  - Target early-stage SaaS startups using 3+ third-party APIs (Stripe, SendGrid, Segment, etc.) via dev tool marketplaces (e.g., GitHub Marketplace, Product Hunt)
 - User Researcher: **Daily Pain & Current Workflow:**
-- Trigger: Developer starts a new project or integrates a new third-party tool.
-- Friction Points:
-  - Must sign up and generate separate API keys for each tool.
-  - Manually store, rotate, and secure keys (often in multiple places).
-  - Onboarding new team members requires sharing and tracking multiple credentials.
-  - Revoking or rotating keys across tools is tedious and error-prone.
-- Workarounds:
-  - Use shared documents or password managers to distribute keys (security risk).
-  - Write custom scripts to manage environment variables.
-  - Rely on manual tracking (spreadsheets, notes).
-- Desired Outcome:
-  - Single API key per project.
-  - Centralized, secure credential management.
-  - Fast onboarding for new tools and team members.
+- **Trigger:** Developer starts a new project or integrates a new third-party tool.
+- **Friction Points:**
+  - Must register for each tool separately.
+  - Manually generate, copy, and securely store multiple API keys.
+  - Risk of exposing keys in code repos or sharing them insecurely with team members.
+  - Revoking or rotating keys is tedious and error-prone.
+- **Workarounds:**
+  - Use spreadsheets or password managers to track keys.
+  - Share keys via insecure channels (chat, email).
+  - Write custom scripts for key rotation or environment variable management.
+- **Desired Outcome:**  
+  - Provision and manage all third-party API keys from a single place.
+  - Share access with teammates securely.
+  - Quickly onboard new tools with minimal manual steps.
 
-**First-Run Workflow Recommendation:**
+**First-Run Workflow (Week-One Success Path):**
 1. Sign up and create a new project.
-2. Generate a unified project API key.
-3. Connect third-party tools via a simple UI (select tools, enter credentials once).
-4. Use the unified key in code/configuration.
-5. Monitor usage and manage access centrally.
+2. Obtain a single unified API key for the project.
+3. Select and connect desired third-party tools via the dashboard.
+4. Gateway provisions/links all required keys behind the unified key.
+5. Copy and use the unified key in app code/config.
+6. Invite team members and set permissions.
 
-**Week-One Success Criteria:**
-- User connects at least 2 third-party tools.
-- Unified key is used in a live dev/test environment.
-- User successfully onboards a teammate with no extra key sharing.
-- Technical Scout: **Local-First MVP Feasibility & Blockers**
+**Success Criteria:**
+- User integrates at least 2 tools using the unified key.
+- All project members access and use the same unified key.
+- No manual key copying or sharing outside the platform.
+- Technical Scout: **Local-First POC Feasibility & Blockers**
 
-- **Minimal Architecture:**
-  - Local proxy server (runs on developer machine) intercepts API calls, injects correct third-party keys.
-  - Local encrypted store for mapping unified project key → individual service keys.
-  - Simple CLI/GUI for key management and onboarding new tools.
-  - Config file per project for mapping endpoints/services.
+- **Core MVP Architecture**
+  - Local proxy server (e.g., Node.js/Go) intercepts API calls, maps unified key to stored third-party keys.
+  - Local encrypted storage (e.g., SQLite, filesystem, or lightweight vault) for API keys.
+  - Config file/UI for mapping unified key to third-party services.
+  - Minimal admin UI for key management (can be CLI for POC).
 
-- **POC: What to Mock vs. Build**
-  - **Mock:** 
-    - Third-party API endpoints (simulate a few popular APIs, e.g., Stripe, SendGrid).
-    - Key provisioning backend (hardcode key mapping logic).
-    - User authentication (assume trusted local user).
-  - **Build:** 
-    - Local proxy logic (request interception, key injection, routing).
-    - Encrypted local key store.
-    - Basic CLI for adding/removing service keys.
+- **Integration Constraints**
+  - Third-party APIs have diverse auth flows (static keys, OAuth, JWT, etc.); POC should focus on static API key services (e.g., SendGrid, Stripe).
+  - Rate limiting, error handling, and logging must be handled per service.
+  - Some APIs may restrict proxying or require IP allowlisting—mock these for POC.
 
-- **Likely Blockers:**
-  - Handling diverse auth schemes (Bearer, OAuth, API key in headers/query).
-  - Secure local storage (cross-platform encryption, key rotation).
-  - Proxying non-HTTP APIs or websocket traffic.
-  - Scaling to cloud or multi-user scenarios (out of local-first scope).
-  - User trust: running a local proxy may raise security/UX concerns.
+- **POC: Mock vs. Build**
+  - **Build:** Local proxy, key mapping logic, encrypted storage, basic CLI.
+  - **Mock:** Third-party API endpoints (simulate responses), advanced auth flows (OAuth), team onboarding flows.
 
-- **Actionable Next Steps:**
-  - Prototype local proxy for 2-3 HTTP APIs with simple key injection.
-  - Validate encrypted local key store on target OSes.
-  - Gather developer feedback on CLI UX and integration friction.
+- **Likely Blockers**
+  - Handling OAuth/refresh tokens locally is complex—defer for POC.
+  - Security: Local key storage must be robust even in MVP.
+  - Scaling to multi-user/team scenarios requires careful design—single-user focus for POC.
