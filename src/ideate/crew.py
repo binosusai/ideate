@@ -12,8 +12,14 @@ from .models import Idea
 from .text import bullet_list, md
 
 
+def _agentops_enabled() -> bool:
+    return bool(os.environ.get("AGENTOPS_API_KEY", "").strip())
+
+
 def _agentops_record_action(action_type: str, params: dict[str, str], returns: str) -> None:
     """Record AgentOps action events with SDK-version-compatible fallbacks."""
+    if not _agentops_enabled():
+        return
     try:
         import agentops  # type: ignore[import]
 
@@ -846,6 +852,30 @@ def _run_member(
     round_label: str = "opening",
     execution_mode: str = "sequential",
 ) -> str:
+    member_display = _member_display_name(stage, member)
+    trace_context = None
+    agentops_mod = None
+    if _agentops_enabled():
+        try:
+            import agentops as _agentops  # type: ignore[import]
+
+            agentops_mod = _agentops
+            start_trace = getattr(agentops_mod, "start_trace", None)
+            if callable(start_trace):
+                trace_context = start_trace(
+                    trace_name=f"{stage}.{member_display}",
+                    tags={
+                        "stage": stage,
+                        "round": round_label,
+                        "member_name": member_display,
+                        "member_role": member.role,
+                        "idea_id": str(idea.id),
+                        "idea_slug": idea.slug,
+                    },
+                )
+        except Exception:
+            trace_context = None
+
     def _execute_member() -> str:
         llm_output = _llm_member_output(
             stage,
@@ -861,8 +891,20 @@ def _run_member(
             raise RuntimeError(f"LLM output missing for {member.name} while IDEATE_REQUIRE_LLM=1")
         return member.run(idea, context | prior_outputs)
 
-    output = _execute_member()
-    member_display = _member_display_name(stage, member)
+    success = False
+    output = ""
+    try:
+        output = _execute_member()
+        success = True
+    finally:
+        if agentops_mod is not None and trace_context is not None:
+            try:
+                end_trace = getattr(agentops_mod, "end_trace", None)
+                if callable(end_trace):
+                    end_trace(trace_context, end_state="success" if success else "error")
+            except Exception:
+                pass
+
     member_token = re.sub(r"[^a-z0-9]+", "_", member_display.lower()).strip("_") or "member"
     _agentops_record_action(
         action_type=f"crew.member.{stage}.{member_token}",
