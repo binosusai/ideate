@@ -94,6 +94,7 @@ def write_openspec(
     research_section = f"\n\n## Research Context\n{research.strip()}" if research.strip() else ""
     debate_section = f"\n\n## Debate Context\n{debate.strip()}" if debate.strip() else ""
     plan_section = f"\n\n## Implementation Plan\n{plan.strip()}" if plan.strip() else ""
+    task_lines = build_openspec_task_list(idea, research, debate, plan)
 
     write_text(
         change / "proposal.md",
@@ -146,18 +147,8 @@ def write_openspec(
         change / "tasks.md",
         md(
             f"Tasks: {idea.title}",
-            """
-            - [ ] Build a runnable frontend.
-            - [ ] Build a backend API if the workflow needs persistence or server-side logic.
-            - [ ] Use SQLite locally and document Neon/Supabase upgrade paths.
-            - [ ] Document Clerk/Firebase Auth integration points if identity is needed.
-            - [ ] Add Vercel/AWS/Terraform deployment scaffolding where useful.
-            - [ ] Add GitHub Actions checks.
-            - [ ] Document local install, local run, deployment, and limitations.
-            - [ ] Prepare handoff notes for the engineering crew.
-            """,
+            "\n".join(task_lines),
         )
-        + plan_section,
     )
     write_text(
         capability / "spec.md",
@@ -205,6 +196,11 @@ def _init_poc_repo(project: Path, idea: Idea) -> None:
     org = os.environ.get("IDEATE_GITHUB_ORG", "binosusai")
     base_repo_name = poc_name(idea)
     is_existing_repo = (project / ".git").exists()
+    remote_repo_exists = _remote_repo_exists(org, base_repo_name)
+
+    if not is_existing_repo and remote_repo_exists:
+        _attach_project_to_existing_remote(project, org, base_repo_name, idea)
+        is_existing_repo = True
     try:
         if is_existing_repo:
             # Repo already exists: just stage everything and commit as a new iteration.
@@ -333,6 +329,145 @@ def write_poc(root: Path, idea: Idea, force_build: bool = False) -> bool:
     copy_openspec_into_poc(path, project)
     _init_poc_repo(project, idea)
     return True
+
+
+def _remote_repo_exists(org: str, repo_name: str) -> bool:
+    result = subprocess.run(
+        ["gh", "repo", "view", f"{org}/{repo_name}", "--json", "name"],
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
+
+
+def _attach_project_to_existing_remote(project: Path, org: str, repo_name: str, idea: Idea) -> None:
+    """Replace generated folder with a clone of existing remote, then re-apply generated files."""
+    original = project
+    backup = project.parent / f"{project.name}.generated"
+    if backup.exists():
+        shutil.rmtree(backup)
+    if original.exists():
+        original.rename(backup)
+
+    clone_result = subprocess.run(
+        ["gh", "repo", "clone", f"{org}/{repo_name}", str(original)],
+        capture_output=True,
+        text=True,
+    )
+    if clone_result.returncode != 0:
+        # Restore generated content if clone fails.
+        if original.exists():
+            shutil.rmtree(original)
+        if backup.exists():
+            backup.rename(original)
+        message = clone_result.stderr.strip() or clone_result.stdout.strip() or "unknown error"
+        raise RuntimeError(f"Failed to clone existing repo {org}/{repo_name}: {message}")
+
+    # Re-apply the newly generated project content onto the checked-out repo.
+    if backup.exists():
+        for child in backup.iterdir():
+            if child.name == ".git":
+                continue
+            target = original / child.name
+            if child.is_dir():
+                shutil.copytree(child, target, dirs_exist_ok=True)
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(child, target)
+        shutil.rmtree(backup)
+
+    try:
+        subprocess.run(
+            ["git", "config", "user.name", os.environ.get("IDEATE_GIT_USER_NAME", "ideate-bot")],
+            cwd=original,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            [
+                "git",
+                "config",
+                "user.email",
+                os.environ.get("IDEATE_GIT_USER_EMAIL", "ideate-bot@users.noreply.github.com"),
+            ],
+            cwd=original,
+            check=True,
+            capture_output=True,
+        )
+    except Exception as exc:  # pragma: no cover
+        raise RuntimeError(f"Failed to configure git for existing repo {org}/{repo_name}: {exc}") from exc
+
+
+def build_openspec_task_list(idea: Idea, research: str, debate: str, plan: str) -> list[str]:
+    """Build actionable checkbox tasks using artifact bullets; fall back to defaults."""
+    defaults = [
+        "Build a runnable frontend.",
+        "Build a backend API if the workflow needs persistence or server-side logic.",
+        "Use SQLite locally and document Neon/Supabase upgrade paths.",
+        "Document Clerk/Firebase Auth integration points if identity is needed.",
+        "Add Vercel/AWS/Terraform deployment scaffolding where useful.",
+        "Add GitHub Actions checks.",
+        "Document local install, local run, deployment, and limitations.",
+        "Prepare handoff notes for the engineering crew.",
+    ]
+
+    harvested: list[str] = []
+    for text in (plan, debate, research):
+        harvested.extend(_extract_action_lines(text))
+
+    merged: list[str] = []
+    seen: set[str] = set()
+    for item in harvested + defaults:
+        normalized = _normalize_task(item)
+        key = normalized.lower()
+        if not normalized or key in seen:
+            continue
+        seen.add(key)
+        merged.append(normalized)
+        if len(merged) >= 14:
+            break
+
+    lines = [
+        "## Implementation Checklist",
+        *[f"- [ ] {item}" for item in merged],
+        "",
+        "## Tracking",
+        f"- [ ] Validate all checklist items against acceptance tests for `{idea.title}`.",
+        "- [ ] Mark this OpenSpec change ready for handoff.",
+    ]
+    return lines
+
+
+def _extract_action_lines(text: str) -> list[str]:
+    lines: list[str] = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith("- "):
+            lines.append(line[2:].strip())
+            continue
+        if line.startswith("* "):
+            lines.append(line[2:].strip())
+            continue
+        if line[0].isdigit() and "." in line:
+            parts = line.split(".", 1)
+            if parts[0].isdigit():
+                lines.append(parts[1].strip())
+    return lines
+
+
+def _normalize_task(text: str) -> str:
+    line = text.strip().strip("`").strip("-").strip()
+    if not line:
+        return ""
+    if line.lower().startswith("requirement:"):
+        line = line.split(":", 1)[1].strip()
+    if len(line) > 140:
+        line = line[:137].rstrip() + "..."
+    if line and line[-1] not in {".", "!", "?"}:
+        line += "."
+    return line
 
 
 def build_project_context(path: Path, idea: Idea) -> dict[str, str]:
