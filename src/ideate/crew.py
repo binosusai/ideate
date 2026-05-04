@@ -12,20 +12,45 @@ from .models import Idea
 from .text import bullet_list, md
 
 
-def _record_crew_event(stage: str, idea_title: str, member_names: list[str], synthesis: str) -> None:
-    """Record a crew run as an AgentOps ActionEvent. No-op if agentops is not available or not initialised."""
+def _agentops_record_action(action_type: str, params: dict[str, str], returns: str) -> None:
+    """Record AgentOps action events with SDK-version-compatible fallbacks."""
     try:
         import agentops  # type: ignore[import]
 
-        agentops.record(
-            agentops.ActionEvent(
-                action_type=f"crew_{stage}",
-                params={"stage": stage, "idea": idea_title, "agents": member_names},
-                returns=synthesis[:1000],
+        record = getattr(agentops, "record", None)
+        if not callable(record):
+            return
+
+        event_cls = getattr(agentops, "ActionEvent", None)
+        if event_cls is not None:
+            record(
+                event_cls(
+                    action_type=action_type,
+                    params=params,
+                    returns=returns[:4000],
+                )
             )
+            return
+
+        # Older/newer SDK fallback where event classes may differ.
+        record(
+            {
+                "action_type": action_type,
+                "params": params,
+                "returns": returns[:4000],
+            }
         )
     except Exception:
         pass
+
+
+def _record_crew_event(stage: str, idea_title: str, member_names: list[str], synthesis: str) -> None:
+    """Record a crew run as an AgentOps ActionEvent. No-op if agentops is not available or not initialised."""
+    _agentops_record_action(
+        action_type=f"crew.{stage}",
+        params={"stage": stage, "idea": idea_title, "agents": ", ".join(member_names)},
+        returns=synthesis,
+    )
 
 
 @dataclass(frozen=True)
@@ -837,30 +862,23 @@ def _run_member(
         return member.run(idea, context | prior_outputs)
 
     output = _execute_member()
-    try:
-        import agentops  # type: ignore[import]
-
-        # Record member activity as events within one session instead of creating
-        # one top-level trace row per agent member call.
-        agentops.record(
-            agentops.ActionEvent(
-                action_type="ideate_crew_member",
-                params={
-                    "stage": stage,
-                    "round": round_label,
-                    "member_name": member.name,
-                    "member_role": member.role,
-                    "execution_mode": execution_mode,
-                    "idea_id": str(idea.id),
-                    "idea_slug": idea.slug,
-                    "workflow": os.environ.get("GITHUB_WORKFLOW", ""),
-                    "workflow_run_id": os.environ.get("GITHUB_RUN_ID", ""),
-                },
-                returns=output[:1000],
-            )
-        )
-    except Exception:
-        pass
+    member_display = _member_display_name(stage, member)
+    member_token = re.sub(r"[^a-z0-9]+", "_", member_display.lower()).strip("_") or "member"
+    _agentops_record_action(
+        action_type=f"crew.member.{stage}.{member_token}",
+        params={
+            "stage": stage,
+            "round": round_label,
+            "member_name": member_display,
+            "member_role": member.role,
+            "execution_mode": execution_mode,
+            "idea_id": str(idea.id),
+            "idea_slug": idea.slug,
+            "workflow": os.environ.get("GITHUB_WORKFLOW", ""),
+            "workflow_run_id": os.environ.get("GITHUB_RUN_ID", ""),
+        },
+        returns=output,
+    )
     return output
 
 

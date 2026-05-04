@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -434,35 +435,11 @@ def _attach_project_to_existing_remote(project: Path, org: str, repo_name: str, 
 
 
 def build_openspec_task_list(idea: Idea, research: str, debate: str, plan: str) -> list[str]:
-    """Build hierarchical numbered checkbox tasks from artifacts."""
-    defaults = [
-        "Build a runnable frontend.",
-        "Build a backend API if the workflow needs persistence or server-side logic.",
-        "Use SQLite locally and document Neon/Supabase upgrade paths.",
-        "Document Clerk/Firebase Auth integration points if identity is needed.",
-        "Add Vercel/AWS/Terraform deployment scaffolding where useful.",
-        "Add GitHub Actions checks.",
-        "Document local install, local run, deployment, and limitations.",
-        "Prepare handoff notes for the engineering crew.",
-    ]
+    """Build concrete hierarchical OpenSpec tasks from role-specific planning notes."""
+    role_notes = _extract_crew_role_notes(plan)
+    acceptance_checks = _extract_acceptance_checks(plan)
 
-    harvested: list[str] = []
-    for text in (plan, debate, research):
-        harvested.extend(_extract_action_lines(text))
-
-    merged: list[str] = []
-    seen: set[str] = set()
-    for item in harvested + defaults:
-        normalized = _normalize_task(item)
-        key = normalized.lower()
-        if not normalized or key in seen:
-            continue
-        seen.add(key)
-        merged.append(normalized)
-        if len(merged) >= 14:
-            break
-
-    grouped = _group_tasks_for_outline(merged)
+    grouped = _build_role_based_task_groups(role_notes, plan, debate, research)
     lines = ["## Implementation Tasks"]
     section_index = 1
     for section, tasks in grouped:
@@ -471,6 +448,12 @@ def build_openspec_task_list(idea: Idea, research: str, debate: str, plan: str) 
         lines.append(f"- [ ] {section_index}. {section}")
         for task_index, task in enumerate(tasks, start=1):
             lines.append(f"- [ ] {section_index}.{task_index} {task}")
+        section_index += 1
+
+    if acceptance_checks:
+        lines.append(f"- [ ] {section_index}. Acceptance Checks")
+        for check_index, check in enumerate(acceptance_checks, start=1):
+            lines.append(f"- [ ] {section_index}.{check_index} {check}")
         section_index += 1
 
     lines.extend(
@@ -505,10 +488,24 @@ def _extract_action_lines(text: str) -> list[str]:
 
 def _normalize_task(text: str) -> str:
     line = text.strip().strip("`").strip("-").strip()
+    line = re.sub(r"\*\*|__", "", line)
+    line = re.sub(r"\s+", " ", line)
     if not line:
         return ""
     if line.lower().startswith("requirement:"):
         line = line.split(":", 1)[1].strip()
+    if line.startswith(":"):
+        line = line[1:].strip()
+    if line.lower().startswith(("findings", "risks", "recommendation", "tradeoffs", "actionables")):
+        return ""
+    if line.endswith(":"):
+        return ""
+    if re.match(r"^q\d+\.", line.lower()) or re.match(r"^a\d+\.", line.lower()):
+        return ""
+    endpoint_match = re.match(r"^(GET|POST|PUT|PATCH|DELETE)\s+(/\S+)", line)
+    if endpoint_match:
+        method, path = endpoint_match.groups()
+        line = f"Implement `{method} {path}` endpoint in the local proxy API"
     if len(line) > 140:
         line = line[:137].rstrip() + "..."
     if line and line[-1] not in {".", "!", "?"}:
@@ -544,6 +541,141 @@ def _group_tasks_for_outline(tasks: list[str]) -> list[tuple[str, list[str]]]:
     if fallback:
         sections.append(("Additional Implementation", fallback[:4]))
     return sections
+
+
+def _extract_crew_role_notes(plan: str) -> dict[str, str]:
+    notes: dict[str, str] = {}
+    if "## Crew Implementation Notes" not in plan:
+        return notes
+
+    in_notes = False
+    current_role = ""
+    current_lines: list[str] = []
+
+    for raw in plan.splitlines():
+        line = raw.rstrip("\n")
+        stripped = line.strip()
+        if not in_notes:
+            if stripped == "## Crew Implementation Notes":
+                in_notes = True
+            continue
+
+        if stripped.startswith("## ") and stripped != "## Crew Implementation Notes":
+            break
+
+        match = re.match(r"^-\s+([^:]+):\s*(.*)$", stripped)
+        if match:
+            if current_role:
+                notes[current_role] = "\n".join(current_lines).strip()
+            current_role = match.group(1).strip()
+            starter = match.group(2).strip()
+            current_lines = [starter] if starter else []
+            continue
+
+        if current_role:
+            current_lines.append(stripped)
+
+    if current_role:
+        notes[current_role] = "\n".join(current_lines).strip()
+
+    return notes
+
+
+def _extract_acceptance_checks(plan: str) -> list[str]:
+    checks: list[str] = []
+    in_checks = False
+    for raw in plan.splitlines():
+        line = raw.strip()
+        if not in_checks:
+            if line == "Acceptance Checks:":
+                in_checks = True
+            continue
+        if not line:
+            if checks:
+                break
+            continue
+        if line.startswith("- ") or line.startswith("* "):
+            normalized = _normalize_task(line[2:].strip())
+            if normalized:
+                checks.append(normalized)
+        elif line.startswith("## "):
+            break
+    return checks[:8]
+
+
+def _extract_concrete_tasks(text: str) -> list[str]:
+    verbs = (
+        "build", "implement", "create", "define", "add", "expose", "store", "encrypt", "proxy",
+        "rotate", "log", "support", "provide", "use", "host", "deploy", "enforce", "publish",
+        "test", "document", "configure", "validate", "generate", "run", "fetch", "map", "forward",
+    )
+    tasks: list[str] = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith("- "):
+            line = line[2:].strip()
+        elif line.startswith("* "):
+            line = line[2:].strip()
+        elif re.match(r"^\d+\.\s+", line):
+            line = re.sub(r"^\d+\.\s+", "", line)
+
+        normalized = _normalize_task(line)
+        if not normalized:
+            continue
+        lower = normalized.lower()
+        if any(v in lower for v in verbs) or normalized.startswith("Implement `"):
+            tasks.append(normalized)
+    return tasks
+
+
+def _merge_dedup(items: list[str], limit: int) -> list[str]:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        key = item.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(item)
+        if len(merged) >= limit:
+            break
+    return merged
+
+
+def _build_role_based_task_groups(
+    role_notes: dict[str, str],
+    plan: str,
+    debate: str,
+    research: str,
+) -> list[tuple[str, list[str]]]:
+    blueprint = [
+        ("Product Workflow", ("Product Planner", "POC Coder"), 5),
+        ("Backend APIs", ("Backend Engineer", "POC Coder"), 6),
+        ("Frontend UI", ("Frontend Engineer",), 5),
+        ("Security And Access", ("Auth Engineer", "OpenSpec Writer"), 5),
+        ("Data And Storage", ("Database Engineer",), 4),
+        ("Infrastructure And Delivery", ("Infra Engineer", "DevOps Engineer"), 5),
+        ("Documentation And Handoff", ("OpenSpec Writer", "Product Planner"), 4),
+    ]
+
+    fallback_pool = _extract_concrete_tasks(plan) + _extract_concrete_tasks(debate) + _extract_concrete_tasks(research)
+    grouped: list[tuple[str, list[str]]] = []
+
+    for title, roles, cap in blueprint:
+        candidates: list[str] = []
+        for role in roles:
+            role_text = role_notes.get(role, "")
+            if role_text:
+                candidates.extend(_extract_concrete_tasks(role_text))
+        if not candidates:
+            candidates = fallback_pool
+        chosen = _merge_dedup(candidates, cap)
+        if chosen:
+            grouped.append((title, chosen))
+
+    return grouped
 
 
 def build_project_context(path: Path, idea: Idea) -> dict[str, str]:
