@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -294,15 +295,80 @@ def write_poc(root: Path, idea: Idea, force_build: bool = False) -> bool:
     path = ensure_idea_folder(root, idea)
     project = poc_dir(root, idea)
     feasible = is_poc_feasible(idea)
+    context = build_project_context(path, idea)
     write_text(path / "poc_report.md", poc_report_for(idea, feasible, project))
     write_text(path / "poc_location.md", poc_location_doc(idea, project))
     if not feasible and not force_build:
         return False
 
     write_common_poc_infra(poc_workspace(root), platform_workspace(root))
-    write_draft_project(project, idea, platform_workspace(root))
+    write_draft_project(project, idea, platform_workspace(root), context)
+    copy_openspec_into_poc(path, project)
     _init_poc_repo(project, idea)
     return True
+
+
+def build_project_context(path: Path, idea: Idea) -> dict[str, str]:
+    research = read_optional(path / "research.md")
+    debate = read_optional(path / "debate.md")
+    plan = read_optional(path / "implementation_plan.md")
+    acceptance = read_optional(path / "acceptance_tests.md")
+    return {
+        "research": research,
+        "debate": debate,
+        "plan": plan,
+        "acceptance": acceptance,
+        "research_summary": artifact_summary(
+            research,
+            "No research artifact found. Run `idea research <id>` before generating POC.",
+        ),
+        "debate_summary": artifact_summary(
+            debate,
+            "No debate artifact found. Run `idea debate <id>` before generating POC.",
+        ),
+        "plan_summary": artifact_summary(
+            plan,
+            "No implementation plan artifact found. Run `idea plan <id>` before generating POC.",
+        ),
+        "use_case": infer_use_case(idea, f"{research}\n{debate}\n{plan}"),
+    }
+
+
+def read_optional(path: Path) -> str:
+    if not path.exists():
+        return ""
+    return path.read_text(encoding="utf-8").strip()
+
+
+def artifact_summary(content: str, fallback: str) -> str:
+    if not content:
+        return fallback
+    lines: list[str] = []
+    for raw in content.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or line.startswith("```"):
+            continue
+        if line.startswith("- "):
+            line = line[2:].strip()
+        lines.append(line)
+        if len(lines) == 3:
+            break
+    if not lines:
+        return fallback
+    return " ".join(lines)
+
+
+def infer_use_case(idea: Idea, context: str) -> str:
+    text = f"{idea.title}\n{idea.why}\n{context}".lower()
+    if "api key" in text or "proxy" in text or "gateway" in text:
+        return "api-key-gateway"
+    return "workflow-assistant"
+
+
+def copy_openspec_into_poc(idea_path: Path, project: Path) -> None:
+    source = idea_path / "openspec"
+    if source.exists():
+        shutil.copytree(source, project / "openspec", dirs_exist_ok=True)
 
 
 def poc_report_for(idea: Idea, feasible: bool, project: Path) -> str:
@@ -378,8 +444,8 @@ def write_common_poc_infra(workspace: Path, platform: Path) -> None:
     )
 
 
-def write_draft_project(project: Path, idea: Idea, platform: Path) -> None:
-    write_text(project / "backend" / "app.py", backend_app(idea))
+def write_draft_project(project: Path, idea: Idea, platform: Path, context: dict[str, str]) -> None:
+    write_text(project / "backend" / "app.py", backend_app(idea, context))
     write_text(project / "frontend" / "index.html", frontend_index(idea))
     write_text(project / "frontend" / "styles.css", frontend_styles())
     write_text(project / "frontend" / "app.js", frontend_app_js())
@@ -387,40 +453,52 @@ def write_draft_project(project: Path, idea: Idea, platform: Path) -> None:
     write_text(project / ".github" / "workflows" / "poc-ci.yml", github_actions(platform))
     write_text(project / ".env.example", env_example())
     write_text(project / "PROJECT_RULES.md", project_rules_doc(platform))
-    write_text(
-        project / "README.md",
-        md(
-            f"Draft POC: {idea.title}",
-            f"""
-            This is a complete proof-of-concept package for `{idea.title}`.
-
-            ## What Is Included
-            - Static frontend in `frontend/`
-            - Python stdlib backend API in `backend/`
-            - SQLite local persistence generated at runtime
-            - Terraform entrypoint in `infra/terraform/` that references the shared platform modules
-            - GitHub Actions checks in `.github/workflows/poc-ci.yml` that document shared workflow usage
-            - Local setup and deployment docs in `docs/`
-            - DevOps policy in `docs/devops.md`
-            - Project rule references in `PROJECT_RULES.md`
-
-            ## Run Locally
-
-            ```bash
-            python3 backend/app.py
-            ```
-
-            Then open `http://localhost:8000`.
-            """,
-        ),
-    )
+    write_text(project / "README.md", project_readme(idea, context))
     write_text(project / "docs" / "local_setup.md", local_setup_doc())
     write_text(project / "docs" / "deployment.md", deployment_doc(platform))
-    write_text(project / "docs" / "architecture.md", architecture_doc(idea))
+    write_text(project / "docs" / "architecture.md", architecture_doc(idea, context))
     write_text(project / "docs" / "devops.md", devops_doc(platform))
+    write_text(project / "docs" / "engineering_brief.md", engineering_brief_doc(idea, context))
 
 
-def backend_app(idea: Idea) -> str:
+def project_readme(idea: Idea, context: dict[str, str]) -> str:
+    return md(
+        f"Draft POC: {idea.title}",
+        f"""
+        This repository is generated from approved idea artifacts and should represent a runnable first draft for the approved use case.
+
+        ## Use Case
+        `{context.get("use_case", "workflow-assistant")}`
+
+        ## Inputs Applied To This Draft
+        - Research: {context.get("research_summary", "")}
+        - Debate: {context.get("debate_summary", "")}
+        - Plan: {context.get("plan_summary", "")}
+
+        ## What Is Included
+        - Runnable backend API in `backend/`
+        - Interactive frontend in `frontend/`
+        - Local SQLite persistence
+        - OpenSpec copied into `openspec/`
+        - Terraform entrypoint in `infra/terraform/`
+        - CI checks in `.github/workflows/poc-ci.yml`
+        - Project docs in `docs/`
+
+        ## Run Locally
+
+        ```bash
+        python3 backend/app.py
+        ```
+
+        Then open `http://localhost:8000`.
+        """,
+    )
+
+
+def backend_app(idea: Idea, context: dict[str, str]) -> str:
+    plan_summary = context.get("plan_summary", "")
+    research_summary = context.get("research_summary", "")
+    use_case = context.get("use_case", "workflow-assistant")
     return f'''from __future__ import annotations
 
 import json
@@ -434,6 +512,9 @@ DB = ROOT / "poc.sqlite3"
 FRONTEND = ROOT / "frontend"
 IDEA_TITLE = {idea.title!r}
 IDEA_CATEGORY = {idea.category!r}
+USE_CASE = {use_case!r}
+PLAN_SUMMARY = {plan_summary!r}
+RESEARCH_SUMMARY = {research_summary!r}
 
 
 def init_db() -> None:
@@ -451,9 +532,10 @@ def init_db() -> None:
 def create_recommendation(raw: str) -> str:
     text = raw.strip() or "No input provided."
     return (
-        f"POC recommendation for {{IDEA_TITLE}}: start with one user workflow, "
-        f"turn this input into a visible before/after, and capture the next manual approval. "
-        f"Input reviewed: {{text[:240]}}"
+        f"POC recommendation for {{IDEA_TITLE}} ({{USE_CASE}}): "
+        f"plan emphasis -> {{PLAN_SUMMARY[:200]}} "
+        f"research signal -> {{RESEARCH_SUMMARY[:180]}} "
+        f"input reviewed -> {{text[:220]}}"
     )
 
 
@@ -463,7 +545,15 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         if urlparse(self.path).path == "/api/health":
-            self.send_json({{"ok": True, "idea": IDEA_TITLE, "category": IDEA_CATEGORY}})
+            self.send_json(
+                {{
+                    "ok": True,
+                    "idea": IDEA_TITLE,
+                    "category": IDEA_CATEGORY,
+                    "use_case": USE_CASE,
+                    "plan_summary": PLAN_SUMMARY[:200],
+                }}
+            )
             return
         super().do_GET()
 
@@ -784,12 +874,15 @@ def deployment_doc(platform: Path) -> str:
     )
 
 
-def architecture_doc(idea: Idea) -> str:
+def architecture_doc(idea: Idea, context: dict[str, str]) -> str:
     return md(
         "Architecture",
         f"""
         ## POC Goal
         Demonstrate `{idea.title}` with a simple browser workflow and a local backend API.
+
+        ## Use Case Classification
+        `{context.get("use_case", "workflow-assistant")}`
 
         ## Components
         - `frontend/`: static HTML/CSS/JavaScript
@@ -800,6 +893,31 @@ def architecture_doc(idea: Idea) -> str:
 
         ## Production Upgrade Path
         Replace SQLite with Neon or Supabase Postgres, add Clerk or Firebase Auth, deploy frontend to Vercel, and deploy backend to AWS.
+        """,
+    )
+
+
+def engineering_brief_doc(idea: Idea, context: dict[str, str]) -> str:
+    return md(
+        f"Engineering Brief: {idea.title}",
+        f"""
+        ## Research Summary Used
+        {context.get("research_summary", "")}
+
+        ## Debate Summary Used
+        {context.get("debate_summary", "")}
+
+        ## Plan Summary Used
+        {context.get("plan_summary", "")}
+
+        ## Acceptance Coverage Input
+        {context.get("acceptance", "No acceptance tests artifact found.")}
+
+        ## SDLC Next Moves
+        - add unit and integration tests for backend endpoints
+        - replace mock recommendation logic with real domain logic
+        - complete Terraform module wiring and environment-specific configs
+        - apply security hardening and observability from platform rules
         """,
     )
 
