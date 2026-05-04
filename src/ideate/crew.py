@@ -583,7 +583,7 @@ def _extract_targeted_research_questions(
     context: dict[str, str],
     opening_outputs: dict[str, str],
 ) -> list[str]:
-    max_questions = 3
+    max_questions = _debate_research_max_requests()
     joined = "\n".join(f"{name}: {text}" for name, text in opening_outputs.items())
 
     llm_questions = _llm_extract_targeted_research_questions(idea, context, joined, max_questions)
@@ -677,13 +677,34 @@ def _run_targeted_research_followups(
     context: dict[str, str],
     questions: list[str],
 ) -> list[tuple[str, str]]:
+    max_requests = _debate_research_max_requests()
+    if max_requests <= 0:
+        return []
     answers: list[tuple[str, str]] = []
-    for question in questions[:3]:
+    for question in questions[:max_requests]:
         answer = _llm_targeted_research_answer(idea, context, question)
         if not answer:
             answer = _rule_based_targeted_research_answer(idea, question)
         answers.append((question, answer[:600]))
+
+    if len(questions) > max_requests:
+        skipped = len(questions) - max_requests
+        answers.append(
+            (
+                "Budget guard",
+                f"Skipped {skipped} additional follow-up question(s) due to IDEATE_DEBATE_RESEARCH_MAX_REQUESTS={max_requests}.",
+            )
+        )
     return answers
+
+
+def _debate_research_max_requests() -> int:
+    raw = os.environ.get("IDEATE_DEBATE_RESEARCH_MAX_REQUESTS", "2").strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        return 2
+    return max(0, min(value, 10))
 
 
 def _llm_targeted_research_answer(idea: Idea, context: dict[str, str], question: str) -> str | None:
