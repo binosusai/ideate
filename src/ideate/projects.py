@@ -201,39 +201,83 @@ def write_openspec(
 
 
 def _init_poc_repo(project: Path, idea: Idea) -> None:
-    """Git-init the POC folder and create a GitHub repo when enabled."""
+    """Git-init (or iterate) the POC folder and create/push a GitHub repo."""
     org = os.environ.get("IDEATE_GITHUB_ORG", "binosusai")
     base_repo_name = poc_name(idea)
+    is_existing_repo = (project / ".git").exists()
     try:
-        subprocess.run(["git", "init"], cwd=project, check=True, capture_output=True)
-        subprocess.run(
-            ["git", "config", "user.name", os.environ.get("IDEATE_GIT_USER_NAME", "ideate-bot")],
-            cwd=project,
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            [
-                "git",
-                "config",
-                "user.email",
-                os.environ.get("IDEATE_GIT_USER_EMAIL", "ideate-bot@users.noreply.github.com"),
-            ],
-            cwd=project,
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(["git", "add", "."], cwd=project, check=True, capture_output=True)
-        subprocess.run(
-            ["git", "commit", "-m", "Initial POC scaffold"],
-            cwd=project,
-            check=True,
-            capture_output=True,
-        )
+        if is_existing_repo:
+            # Repo already exists: just stage everything and commit as a new iteration.
+            iteration = idea.iteration_count or 1
+            commit_msg = f"POC iteration {iteration}: regenerated scaffold"
+            subprocess.run(["git", "add", "."], cwd=project, check=True, capture_output=True)
+            # Only commit if there are staged changes.
+            diff = subprocess.run(
+                ["git", "diff", "--cached", "--quiet"],
+                cwd=project,
+                capture_output=True,
+            )
+            if diff.returncode != 0:
+                subprocess.run(
+                    ["git", "commit", "-m", commit_msg],
+                    cwd=project,
+                    check=True,
+                    capture_output=True,
+                )
+                print(f"[ideate] Committed iteration {iteration} to existing POC repo at {project.name}")
+            else:
+                print(f"[ideate] No changes detected in existing POC repo {project.name}; nothing to commit.")
+        else:
+            subprocess.run(["git", "init"], cwd=project, check=True, capture_output=True)
+            subprocess.run(
+                ["git", "config", "user.name", os.environ.get("IDEATE_GIT_USER_NAME", "ideate-bot")],
+                cwd=project,
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "config",
+                    "user.email",
+                    os.environ.get("IDEATE_GIT_USER_EMAIL", "ideate-bot@users.noreply.github.com"),
+                ],
+                cwd=project,
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(["git", "add", "."], cwd=project, check=True, capture_output=True)
+            subprocess.run(
+                ["git", "commit", "-m", "Initial POC scaffold"],
+                cwd=project,
+                check=True,
+                capture_output=True,
+            )
     except Exception as exc:  # pragma: no cover
-        raise RuntimeError(f"POC git initialization failed for {project.name}: {exc}") from exc
+        raise RuntimeError(f"POC git operation failed for {project.name}: {exc}") from exc
     if os.environ.get("IDEATE_SKIP_GITHUB_REPO_CREATE") == "1":
         print(f"[ideate] GitHub repo creation skipped for {org}/{base_repo_name}")
+        return
+
+    if is_existing_repo:
+        # Push the new iteration commit to the existing remote if one is configured.
+        remote_check = subprocess.run(
+            ["git", "remote"],
+            cwd=project,
+            capture_output=True,
+            text=True,
+        )
+        if remote_check.stdout.strip():
+            push_result = subprocess.run(
+                ["git", "push"],
+                cwd=project,
+                capture_output=True,
+                text=True,
+            )
+            if push_result.returncode == 0:
+                print(f"[ideate] Pushed iteration to existing remote for {org}/{base_repo_name}")
+            else:
+                print(f"[ideate] Push failed: {push_result.stderr.strip()}")
         return
 
     candidates = [base_repo_name]
