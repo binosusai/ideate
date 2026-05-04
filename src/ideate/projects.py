@@ -252,13 +252,13 @@ def _init_poc_repo(project: Path, idea: Idea) -> None:
         print(f"[ideate] GitHub repo creation failed (local repo still initialized): {result.stderr.strip()}")
 
 
-def write_poc(root: Path, idea: Idea) -> bool:
+def write_poc(root: Path, idea: Idea, force_build: bool = False) -> bool:
     path = ensure_idea_folder(root, idea)
     project = poc_dir(root, idea)
     feasible = is_poc_feasible(idea)
     write_text(path / "poc_report.md", poc_report_for(idea, feasible, project))
     write_text(path / "poc_location.md", poc_location_doc(idea, project))
-    if not feasible:
+    if not feasible and not force_build:
         return False
 
     write_common_poc_infra(poc_workspace(root), platform_workspace(root))

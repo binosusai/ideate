@@ -224,7 +224,7 @@ def main(argv: list[str] | None = None) -> int:
             if idea.status not in {"approved", "poc", "handoff"} and not args.force:
                 print("POC requires approved status. Use --force to override.", file=sys.stderr)
                 return 2
-            feasible = write_poc(root, idea)
+            feasible = write_poc(root, idea, force_build=args.force)
             store.set_status(idea.id, "poc")
             refresh_readme(root, store.get_idea(idea.id))
             print(f"POC {'created' if feasible else 'skipped'} for idea {idea.id}")
