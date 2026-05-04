@@ -631,29 +631,32 @@ def _run_member(
             raise RuntimeError(f"LLM output missing for {member.name} while IDEATE_REQUIRE_LLM=1")
         return member.run(idea, context | prior_outputs)
 
+    output = _execute_member()
     try:
         import agentops  # type: ignore[import]
 
-        trace_group = os.environ.get("IDEATE_AGENTOPS_TRACE_GROUP", "ideate-crew").strip() or "ideate-crew"
-        traced_call = agentops.agent(
-            name=trace_group,
-            tags={
-                "execution_mode": execution_mode,
-                "stage": stage,
-                "round": round_label,
-                "member_name": member.name,
-                "member_role": member.role,
-                "idea_id": str(idea.id),
-                "idea_slug": idea.slug,
-                "workflow": os.environ.get("GITHUB_WORKFLOW", ""),
-                "workflow_run_id": os.environ.get("GITHUB_RUN_ID", ""),
-            },
-            capture_request=False,
-            capture_response=True,
-        )(_execute_member)
-        return traced_call()
+        # Record member activity as events within one session instead of creating
+        # one top-level trace row per agent member call.
+        agentops.record(
+            agentops.ActionEvent(
+                action_type="ideate_crew_member",
+                params={
+                    "stage": stage,
+                    "round": round_label,
+                    "member_name": member.name,
+                    "member_role": member.role,
+                    "execution_mode": execution_mode,
+                    "idea_id": str(idea.id),
+                    "idea_slug": idea.slug,
+                    "workflow": os.environ.get("GITHUB_WORKFLOW", ""),
+                    "workflow_run_id": os.environ.get("GITHUB_RUN_ID", ""),
+                },
+                returns=output[:1000],
+            )
+        )
     except Exception:
-        return _execute_member()
+        pass
+    return output
 
 
 def market_researcher(idea: Idea, context: dict[str, str]) -> str:

@@ -32,16 +32,15 @@ def platform_workspace(root: Path) -> Path:
 
 
 def poc_name(idea: Idea) -> str:
-    # Derive a short readable codename from the idea slug words.
-    # e.g., "unified-api-key-gateway-..." → "unifiedapi" + 2-char hash suffix.
+    # Derive a concise readable codename from the idea slug words.
+    # e.g., "unified-api-key-gateway-..." -> "unifieda" + 2-char hash suffix.
     _stop = frozenset({
         "a", "an", "the", "and", "or", "of", "to", "for", "in", "on",
         "at", "by", "with", "one", "per", "that", "which", "this", "from",
         "via", "as", "is", "are", "be", "it", "its", "i", "all",
     })
     parts = [p for p in idea.slug.split("-") if p and p not in _stop]
-    words = [p[:8] for p in parts[:2]]
-    base = ("".join(words) or "idea")[:16]
+    base = (parts[0] if parts else "idea")[:8]
     seed = int(hashlib.sha1(idea.slug.encode("utf-8")).hexdigest(), 16)
     alpha = "abcdefghijklmnopqrstuvwxyz"
     suffix = alpha[seed % 26] + alpha[(seed // 26) % 26]
