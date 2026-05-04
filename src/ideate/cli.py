@@ -137,12 +137,16 @@ def main(argv: list[str] | None = None) -> int:
     store = store_for(root)
     ao_started = _agentops_init()
 
+    def _done(code: int, success: bool = True) -> int:
+        _agentops_end(ao_started, success=success)
+        return code
+
     try:
         if args.command == "init":
             store.init()
             (root / "ideas").mkdir(parents=True, exist_ok=True)
             print(f"Initialized Ideate at {root}")
-            return 0
+            return _done(0)
 
         store.init()
 
@@ -150,18 +154,18 @@ def main(argv: list[str] | None = None) -> int:
             idea = store.add_idea(args.title, args.category, args.why or "")
             store.log_run("capture", f"Captured idea {idea.id}: {idea.title}", idea.id)
             print(format_idea(idea))
-            return 0
+            return _done(0)
 
         if args.command == "list":
             ideas = store.list_ideas(args.status)
             print_ideas(ideas)
-            return 0
+            return _done(0)
 
         if args.command == "daily":
             ideas = store.list_ideas()
             print_daily(ideas)
             store.log_run("daily", f"Reviewed {len(ideas)} ideas")
-            return 0
+            return _done(0)
 
         if args.command == "openspec":
             idea = store.get_idea(args.idea_id)
@@ -179,7 +183,7 @@ def main(argv: list[str] | None = None) -> int:
             plan = _read_file_or_db("plan", "implementation_plan.md")
             write_openspec(path, idea, research=research, debate=debate, plan=plan)
             print(f"Regenerated openspec for idea {idea.id} at {path / 'openspec'}")
-            return 0
+            return _done(0)
 
         if args.command == "board-setup":
             idea = store.get_idea(args.idea_id)
@@ -197,7 +201,7 @@ def main(argv: list[str] | None = None) -> int:
                             f"[ideate] board-setup warning for stage '{stage}': {exc}",
                             file=sys.stderr,
                         )
-            return 0
+            return _done(0)
 
         idea = store.get_idea(args.idea_id)
 
@@ -217,7 +221,7 @@ def main(argv: list[str] | None = None) -> int:
                 _mark_stage_reused(idea, "research", "Reused cached research artifact.")
                 store.set_status(idea.id, "researched")
                 print(cached)
-                return 0
+                return _done(0)
 
             sync_agent_tasks(
                 idea,
@@ -235,7 +239,7 @@ def main(argv: list[str] | None = None) -> int:
             store.add_artifact(idea.id, "crew-research", result.transcript)
             store.set_status(idea.id, "researched")
             print(content)
-            return 0
+            return _done(0)
 
         if args.command == "debate":
             cached = store.latest_artifact(idea.id, "debate")
@@ -243,7 +247,7 @@ def main(argv: list[str] | None = None) -> int:
                 _mark_stage_reused(idea, "debate", "Reused cached debate artifact.")
                 store.set_status(idea.id, "debated")
                 print(cached)
-                return 0
+                return _done(0)
 
             sync_agent_tasks(
                 idea,
@@ -263,7 +267,7 @@ def main(argv: list[str] | None = None) -> int:
             store.add_artifact(idea.id, "crew-debate", result.transcript)
             store.set_status(idea.id, "debated")
             print(content)
-            return 0
+            return _done(0)
 
         if args.command == "plan":
             cached_plan = store.latest_artifact(idea.id, "plan")
@@ -284,7 +288,7 @@ def main(argv: list[str] | None = None) -> int:
                 ]
                 path = write_planning_files(root, planned, research, debate, cached_plan, crew_transcripts)
                 print(f"Planned idea {idea.id} at {path}")
-                return 0
+                return _done(0)
 
             sync_agent_tasks(
                 idea,
@@ -317,14 +321,14 @@ def main(argv: list[str] | None = None) -> int:
             ]
             path = write_planning_files(root, planned, research, debate, plan, crew_transcripts)
             print(f"Planned idea {idea.id} at {path}")
-            return 0
+            return _done(0)
 
         if args.command == "approve":
             store.set_status(idea.id, "approved")
             store.add_decision(idea.id, "approved", args.rationale or "Approved by user.")
             refresh_readme(root, store.get_idea(idea.id))
             print(f"Approved idea {idea.id}: {idea.title}")
-            return 0
+            return _done(0)
 
         if args.command == "review":
             if args.decision == "approve":
@@ -342,12 +346,12 @@ def main(argv: list[str] | None = None) -> int:
                 store.add_decision(idea.id, "poc-revise", note)
                 print(f"POC marked for revision for idea {idea.id}: {idea.title}")
             refresh_readme(root, store.get_idea(idea.id))
-            return 0
+            return _done(0)
 
         if args.command == "poc":
             if idea.status not in {"approved", "poc", "handoff"} and not args.force:
                 print("POC requires approved status. Use --force to override.", file=sys.stderr)
-                return 2
+                return _done(2, success=False)
             feasible = write_poc(root, idea, force_build=args.force)
             store.set_status(idea.id, "poc")
             store.set_review_state(
@@ -359,18 +363,18 @@ def main(argv: list[str] | None = None) -> int:
             )
             refresh_readme(root, store.get_idea(idea.id))
             print(f"POC {'created' if feasible else 'skipped'} for idea {idea.id}")
-            return 0
+            return _done(0)
 
         if args.command == "handoff":
             if idea.status not in {"poc", "handoff"} and not args.force:
                 print("Handoff requires POC status. Use --force to override.", file=sys.stderr)
-                return 2
+                return _done(2, success=False)
             path = write_handoff(root, idea)
             store.set_status(idea.id, "handoff")
             store.add_decision(idea.id, "handoff-ready", "Packaged for engineering crew.")
             refresh_readme(root, store.get_idea(idea.id))
             print(f"Handoff ready at {path}")
-            return 0
+            return _done(0)
 
         parser.error(f"unknown command {args.command}")
     except (KeyError, ValueError, RuntimeError) as exc:
@@ -378,8 +382,7 @@ def main(argv: list[str] | None = None) -> int:
         _agentops_end(ao_started, success=False)
         return 1
 
-    _agentops_end(ao_started, success=True)
-    return 0
+    return _done(0)
 
 
 def build_parser() -> argparse.ArgumentParser:

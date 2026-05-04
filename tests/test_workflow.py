@@ -73,8 +73,9 @@ def test_full_idea_workflow_creates_openspec_and_poc(tmp_path: Path, monkeypatch
     assert "hooks/pre-commit" in rules
 
     tasks = (idea / "openspec" / "changes" / idea_slug / "tasks.md").read_text(encoding="utf-8")
-    assert "## Implementation Checklist" in tasks
-    assert "- [ ]" in tasks
+    assert "## Implementation Tasks" in tasks
+    assert "- [ ] 1." in tasks
+    assert "- [ ] 1.1" in tasks
     assert "## Tracking" in tasks
     assert "## Implementation Plan" not in tasks
 

@@ -276,42 +276,49 @@ def _init_poc_repo(project: Path, idea: Idea) -> None:
                 print(f"[ideate] Push failed: {push_result.stderr.strip()}")
         return
 
-    candidates = [base_repo_name]
-    alphabet = "abcdefghijklmnopqrstuvwxyz"
-    seed = int(hashlib.sha1(f"{idea.slug}:{idea.id}".encode("utf-8")).hexdigest(), 16)
-    base_trimmed = base_repo_name[:10]
-    for offset in range(1, 6):
-        candidates.append(
-            f"{base_trimmed}{alphabet[(seed + offset) % 26]}{alphabet[(seed // 26 + offset) % 26]}"
-        )
+    # Always target a single stable repo slug for the idea.
+    # If it already exists, attach to it instead of creating suffix repos.
+    result = subprocess.run(
+        [
+            "gh", "repo", "create",
+            f"{org}/{base_repo_name}",
+            "--public",
+            "--source", str(project),
+            "--push",
+            "--description", idea.title,
+        ],
+        cwd=project,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        print(f"[ideate] GitHub repo created: https://github.com/{org}/{base_repo_name}")
+        return
 
-    # gh CLI uses GH_TOKEN env var; fall back to current environment (CI sets GH_TOKEN directly)
-    for repo_name in candidates:
-        result = subprocess.run(
-            [
-                "gh", "repo", "create",
-                f"{org}/{repo_name}",
-                "--public",
-                "--source", str(project),
-                "--push",
-                "--description", idea.title,
-            ],
+    message = result.stderr.strip() or result.stdout.strip() or "unknown error"
+    if "Name already exists on this account" in message:
+        _attach_project_to_existing_remote(project, org, base_repo_name, idea)
+        subprocess.run(["git", "add", "."], cwd=project, check=True, capture_output=True)
+        diff = subprocess.run(
+            ["git", "diff", "--cached", "--quiet"],
             cwd=project,
             capture_output=True,
-            text=True,
         )
-        if result.returncode == 0:
-            print(f"[ideate] GitHub repo created: https://github.com/{org}/{repo_name}")
-            return
+        if diff.returncode != 0:
+            iteration = idea.iteration_count or 1
+            subprocess.run(
+                ["git", "commit", "-m", f"POC iteration {iteration}: regenerated scaffold"],
+                cwd=project,
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(["git", "push"], cwd=project, check=True, capture_output=True)
+            print(f"[ideate] Pushed iteration to existing remote for {org}/{base_repo_name}")
+        else:
+            print(f"[ideate] No changes detected in existing remote repo {base_repo_name}; nothing to commit.")
+        return
 
-        message = result.stderr.strip() or result.stdout.strip() or "unknown error"
-        if "Name already exists on this account" in message:
-            continue
-        raise RuntimeError(f"GitHub repo creation failed for {org}/{repo_name}: {message}")
-
-    raise RuntimeError(
-        f"GitHub repo creation failed for {org}: all candidate names are already taken ({', '.join(candidates)})"
-    )
+    raise RuntimeError(f"GitHub repo creation failed for {org}/{base_repo_name}: {message}")
 
 
 def write_poc(root: Path, idea: Idea, force_build: bool = False) -> bool:
@@ -399,7 +406,7 @@ def _attach_project_to_existing_remote(project: Path, org: str, repo_name: str, 
 
 
 def build_openspec_task_list(idea: Idea, research: str, debate: str, plan: str) -> list[str]:
-    """Build actionable checkbox tasks using artifact bullets; fall back to defaults."""
+    """Build hierarchical numbered checkbox tasks from artifacts."""
     defaults = [
         "Build a runnable frontend.",
         "Build a backend API if the workflow needs persistence or server-side logic.",
@@ -427,14 +434,25 @@ def build_openspec_task_list(idea: Idea, research: str, debate: str, plan: str) 
         if len(merged) >= 14:
             break
 
-    lines = [
-        "## Implementation Checklist",
-        *[f"- [ ] {item}" for item in merged],
-        "",
-        "## Tracking",
-        f"- [ ] Validate all checklist items against acceptance tests for `{idea.title}`.",
-        "- [ ] Mark this OpenSpec change ready for handoff.",
-    ]
+    grouped = _group_tasks_for_outline(merged)
+    lines = ["## Implementation Tasks"]
+    section_index = 1
+    for section, tasks in grouped:
+        if not tasks:
+            continue
+        lines.append(f"- [ ] {section_index}. {section}")
+        for task_index, task in enumerate(tasks, start=1):
+            lines.append(f"- [ ] {section_index}.{task_index} {task}")
+        section_index += 1
+
+    lines.extend(
+        [
+            "",
+            "## Tracking",
+            f"- [ ] {section_index}. Validate all implemented tasks against acceptance tests for `{idea.title}`.",
+            f"- [ ] {section_index + 1}. Mark this OpenSpec change ready for handoff.",
+        ]
+    )
     return lines
 
 
@@ -468,6 +486,36 @@ def _normalize_task(text: str) -> str:
     if line and line[-1] not in {".", "!", "?"}:
         line += "."
     return line
+
+
+def _group_tasks_for_outline(tasks: list[str]) -> list[tuple[str, list[str]]]:
+    buckets: list[tuple[str, tuple[str, ...], list[str]]] = [
+        ("Plan And Scope", ("scope", "requirement", "acceptance", "workflow", "user"), []),
+        ("Backend And Data", ("backend", "api", "database", "sqlite", "schema", "storage"), []),
+        ("Frontend Experience", ("frontend", "ui", "ux", "screen", "form", "dashboard"), []),
+        ("Infrastructure And Delivery", ("terraform", "vercel", "aws", "deploy", "ci", "pipeline"), []),
+        ("Handoff And Documentation", ("doc", "readme", "handoff", "test", "guide"), []),
+    ]
+    fallback: list[str] = []
+
+    for task in tasks:
+        lower = task.lower()
+        assigned = False
+        for _, keywords, bucket_items in buckets:
+            if any(word in lower for word in keywords):
+                bucket_items.append(task)
+                assigned = True
+                break
+        if not assigned:
+            fallback.append(task)
+
+    sections: list[tuple[str, list[str]]] = []
+    for title, _, bucket_items in buckets:
+        if bucket_items:
+            sections.append((title, bucket_items[:4]))
+    if fallback:
+        sections.append(("Additional Implementation", fallback[:4]))
+    return sections
 
 
 def build_project_context(path: Path, idea: Idea) -> dict[str, str]:
