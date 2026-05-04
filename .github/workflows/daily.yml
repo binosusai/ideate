@@ -34,12 +34,14 @@ jobs:
       - name: Initialise database schema
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          IDEATE_REQUIRE_DATABASE_URL: "1"
         run: idea init
         working-directory: .
 
       - name: Run daily review
         env:
           DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+          IDEATE_REQUIRE_DATABASE_URL: "1"
           AGENTOPS_API_KEY:  ${{ secrets.AGENTOPS_API_KEY }}
           OPENAI_API_KEY:    ${{ secrets.OPENAI_API_KEY }}
           IDEATE_MODEL:      gpt-4.1-nano
@@ -49,6 +51,7 @@ jobs:
       - name: Build status dashboard
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          IDEATE_REQUIRE_DATABASE_URL: "1"
         run: |
           python - <<'PY'
           import os

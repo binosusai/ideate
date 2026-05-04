@@ -91,6 +91,10 @@ def store_for(root: Path) -> Store | PgStore:
     database_url = os.environ.get("DATABASE_URL")
     if not database_url:
         database_url = terraform_database_url(root)
+    if os.environ.get("IDEATE_REQUIRE_DATABASE_URL") == "1" and not database_url:
+        raise RuntimeError(
+            "DATABASE_URL is required for this run. Configure Neon/Postgres and try again."
+        )
     if database_url:
         return PgStore(database_url)
     return Store(root / ".ideate" / "ideate.sqlite3")
@@ -242,7 +246,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         parser.error(f"unknown command {args.command}")
-    except (KeyError, ValueError) as exc:
+    except (KeyError, ValueError, RuntimeError) as exc:
         print(str(exc), file=sys.stderr)
         _agentops_end(ao_started, success=False)
         return 1

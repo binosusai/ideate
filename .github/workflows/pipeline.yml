@@ -24,6 +24,8 @@ jobs:
     outputs:
       idea_id: ${{ steps.pipeline_meta.outputs.idea_id }}
       stages: ${{ steps.pipeline_meta.outputs.stages }}
+      idea_slug: ${{ steps.idea_meta.outputs.slug }}
+      idea_title: ${{ steps.idea_meta.outputs.title }}
     permissions:
       contents: write
     env:
@@ -55,12 +57,14 @@ jobs:
       - name: Initialise database schema
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          IDEATE_REQUIRE_DATABASE_URL: "1"
         run: idea init
 
       - name: Resolve pipeline inputs
         id: pipeline_meta
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          IDEATE_REQUIRE_DATABASE_URL: "1"
           INPUT_IDEA_ID: ${{ github.event.inputs.idea_id || '' }}
           INPUT_STAGES: ${{ github.event.inputs.stages || '' }}
         run: |
@@ -102,10 +106,55 @@ jobs:
         if: steps.pipeline_meta.outputs.idea_id == '0'
         run: echo "No eligible idea found in DB. Skipping this scheduled pipeline run."
 
+      - name: Resolve idea metadata
+        if: steps.pipeline_meta.outputs.idea_id != '0'
+        id: idea_meta
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          IDEA_ID: ${{ steps.pipeline_meta.outputs.idea_id }}
+        run: |
+          python - <<'PY'
+          import os
+          import psycopg2
+
+          idea_id = int(os.environ["IDEA_ID"])
+          conn = psycopg2.connect(os.environ["DATABASE_URL"])
+          try:
+            with conn.cursor() as cur:
+              cur.execute(
+                "SELECT slug, title FROM ideas WHERE id = %s",
+                (idea_id,),
+              )
+              row = cur.fetchone()
+            if not row:
+              raise SystemExit(f"idea {idea_id} not found")
+            slug, title = row
+            with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"slug={slug}\n")
+              fh.write(f"title={title}\n")
+          finally:
+            conn.close()
+          PY
+
+      - name: Print resolved idea
+        if: steps.pipeline_meta.outputs.idea_id != '0'
+        run: |
+          echo "Resolved idea selection"
+          echo "  id:    ${{ steps.pipeline_meta.outputs.idea_id }}"
+          echo "  title: ${{ steps.idea_meta.outputs.title }}"
+          echo "  slug:  ${{ steps.idea_meta.outputs.slug }}"
+          {
+            echo "## Resolved Idea"
+            echo "- ID: ${{ steps.pipeline_meta.outputs.idea_id }}"
+            echo "- Title: ${{ steps.idea_meta.outputs.title }}"
+            echo "- Slug: ${{ steps.idea_meta.outputs.slug }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Research
         if: steps.pipeline_meta.outputs.idea_id != '0' && contains(steps.pipeline_meta.outputs.stages, 'research')
         env:
           DATABASE_URL:     ${{ secrets.DATABASE_URL }}
+          IDEATE_REQUIRE_DATABASE_URL: "1"
           AGENTOPS_API_KEY: ${{ secrets.AGENTOPS_API_KEY }}
           OPENAI_API_KEY:   ${{ secrets.OPENAI_API_KEY }}
           GH_TOKEN:         ${{ secrets.GH_PAT }}
@@ -119,6 +168,7 @@ jobs:
         if: steps.pipeline_meta.outputs.idea_id != '0' && contains(steps.pipeline_meta.outputs.stages, 'debate')
         env:
           DATABASE_URL:     ${{ secrets.DATABASE_URL }}
+          IDEATE_REQUIRE_DATABASE_URL: "1"
           AGENTOPS_API_KEY: ${{ secrets.AGENTOPS_API_KEY }}
           OPENAI_API_KEY:   ${{ secrets.OPENAI_API_KEY }}
           GH_TOKEN:         ${{ secrets.GH_PAT }}
@@ -133,6 +183,7 @@ jobs:
         if: steps.pipeline_meta.outputs.idea_id != '0' && contains(steps.pipeline_meta.outputs.stages, 'plan')
         env:
           DATABASE_URL:     ${{ secrets.DATABASE_URL }}
+          IDEATE_REQUIRE_DATABASE_URL: "1"
           AGENTOPS_API_KEY: ${{ secrets.AGENTOPS_API_KEY }}
           OPENAI_API_KEY:   ${{ secrets.OPENAI_API_KEY }}
           GH_TOKEN:         ${{ secrets.GH_PAT }}
@@ -142,33 +193,6 @@ jobs:
           IDEATE_REQUIRE_LLM: "1"
           IDEATE_HOME:      ${{ github.workspace }}
         run: idea plan ${{ steps.pipeline_meta.outputs.idea_id }}
-
-      - name: Resolve idea metadata
-        if: steps.pipeline_meta.outputs.idea_id != '0' && contains(steps.pipeline_meta.outputs.stages, 'plan')
-        id: idea_meta
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          IDEA_ID: ${{ steps.pipeline_meta.outputs.idea_id }}
-        run: |
-          python - <<'PY'
-          import os
-          import psycopg2
-
-          idea_id = int(os.environ["IDEA_ID"])
-          conn = psycopg2.connect(os.environ["DATABASE_URL"])
-          try:
-            with conn.cursor() as cur:
-              cur.execute("SELECT slug, title FROM ideas WHERE id = %s", (idea_id,))
-              row = cur.fetchone()
-            if not row:
-              raise SystemExit(f"idea {idea_id} not found")
-            slug, title = row
-            with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
-              fh.write(f"slug={slug}\n")
-              fh.write(f"title={title}\n")
-          finally:
-            conn.close()
-          PY
 
       - name: Build proposal email body
         if: steps.pipeline_meta.outputs.idea_id != '0' && contains(steps.pipeline_meta.outputs.stages, 'plan')
@@ -228,6 +252,7 @@ jobs:
         if: always()
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          IDEATE_REQUIRE_DATABASE_URL: "1"
         run: |
           python - <<'PY'
           import os
@@ -313,12 +338,19 @@ jobs:
         if: needs.plan.outputs.idea_id != '0' && contains(needs.plan.outputs.stages, 'approve')
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: idea approve ${{ needs.plan.outputs.idea_id }} --rationale "Approved via poc-approval environment gate."
+          IDEATE_REQUIRE_DATABASE_URL: "1"
+        run: |
+          echo "Approved idea"
+          echo "  id:    ${{ needs.plan.outputs.idea_id }}"
+          echo "  title: ${{ needs.plan.outputs.idea_title }}"
+          echo "  slug:  ${{ needs.plan.outputs.idea_slug }}"
+          idea approve ${{ needs.plan.outputs.idea_id }} --rationale "Approved via poc-approval environment gate."
 
       - name: Build POC & push new repo
         if: needs.plan.outputs.idea_id != '0' && contains(needs.plan.outputs.stages, 'poc')
         env:
           DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+          IDEATE_REQUIRE_DATABASE_URL: "1"
           AGENTOPS_API_KEY:  ${{ secrets.AGENTOPS_API_KEY }}
           OPENAI_API_KEY:    ${{ secrets.OPENAI_API_KEY }}
           IDEATE_MODEL:      gpt-4.1-nano
@@ -326,4 +358,9 @@ jobs:
           IDEATE_POC_HOME:   /tmp/pocs
           IDEATE_GITHUB_ORG: binosusai
           GH_TOKEN:          ${{ secrets.GH_PAT }}
-        run: idea poc ${{ needs.plan.outputs.idea_id }} --force
+        run: |
+          echo "POC idea"
+          echo "  id:    ${{ needs.plan.outputs.idea_id }}"
+          echo "  title: ${{ needs.plan.outputs.idea_title }}"
+          echo "  slug:  ${{ needs.plan.outputs.idea_slug }}"
+          idea poc ${{ needs.plan.outputs.idea_id }} --force
