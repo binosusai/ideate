@@ -11,7 +11,7 @@ from .board_sync import AgentTaskUpdate, sync_agent_tasks
 from .crew import run_debate_crew, run_planning_crew, run_research_crew
 from .db import PgStore, Store
 from .models import CATEGORIES
-from .projects import refresh_readme, write_handoff, write_planning_files, write_poc
+from .projects import refresh_readme, write_handoff, write_openspec, write_planning_files, write_poc
 
 
 STAGE_MEMBERS: dict[str, list[str]] = {
@@ -153,6 +153,24 @@ def main(argv: list[str] | None = None) -> int:
             ideas = store.list_ideas()
             print_daily(ideas)
             store.log_run("daily", f"Reviewed {len(ideas)} ideas")
+            return 0
+
+        if args.command == "openspec":
+            idea = store.get_idea(args.idea_id)
+            path = root / "ideas" / idea.slug
+
+            def _read_file_or_db(artifact_kind: str, filename: str) -> str:
+                from_db = store.latest_artifact(idea.id, artifact_kind) or ""
+                if from_db:
+                    return from_db
+                disk_path = path / filename
+                return disk_path.read_text(encoding="utf-8").strip() if disk_path.exists() else ""
+
+            research = _read_file_or_db("research", "research.md")
+            debate = _read_file_or_db("debate", "debate.md")
+            plan = _read_file_or_db("plan", "implementation_plan.md")
+            write_openspec(path, idea, research=research, debate=debate, plan=plan)
+            print(f"Regenerated openspec for idea {idea.id} at {path / 'openspec'}")
             return 0
 
         if args.command == "board-setup":
@@ -359,6 +377,9 @@ def build_parser() -> argparse.ArgumentParser:
     handoff = sub.add_parser("handoff", help="Package for engineering crew")
     handoff.add_argument("idea_id", type=int)
     handoff.add_argument("--force", action="store_true")
+
+    openspec_cmd = sub.add_parser("openspec", help="Regenerate openspec files from existing research/debate/plan artifacts")
+    openspec_cmd.add_argument("idea_id", type=int)
 
     board_setup = sub.add_parser("board-setup", help="Pre-create TODO task issues for all agents in given stages")
     board_setup.add_argument("idea_id", type=int)
