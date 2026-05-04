@@ -72,7 +72,7 @@ def write_planning_files(
     write_text(path / "acceptance_tests.md", acceptance_tests(idea))
     if crew_transcripts:
         write_text(path / "crew_transcripts.md", "\n\n---\n\n".join(crew_transcripts))
-    write_openspec(path, idea)
+    write_openspec(path, idea, research=research, debate=debate, plan=plan)
     return path
 
 
@@ -81,9 +81,20 @@ def refresh_readme(root: Path, idea: Idea) -> None:
     write_text(path / "README.md", idea_readme(idea))
 
 
-def write_openspec(path: Path, idea: Idea) -> None:
+def write_openspec(
+    path: Path,
+    idea: Idea,
+    research: str = "",
+    debate: str = "",
+    plan: str = "",
+) -> None:
     change = path / "openspec" / "changes" / idea.slug
     capability = change / "specs" / slugify(idea.title)
+
+    research_section = f"\n\n## Research Context\n{research.strip()}" if research.strip() else ""
+    debate_section = f"\n\n## Debate Context\n{debate.strip()}" if debate.strip() else ""
+    plan_section = f"\n\n## Implementation Plan\n{plan.strip()}" if plan.strip() else ""
+
     write_text(
         change / "proposal.md",
         md(
@@ -102,7 +113,9 @@ def write_openspec(path: Path, idea: Idea) -> None:
             - Adds frontend, backend, database, infra, DevOps, and deployment documentation.
             - Defines implementation requirements in `specs/`.
             """,
-        ),
+        )
+        + research_section
+        + debate_section,
     )
     write_text(
         change / "design.md",
@@ -126,7 +139,8 @@ def write_openspec(path: Path, idea: Idea) -> None:
             - External integrations may need a second design pass.
             - Deployment docs are scaffolding until real cloud accounts and project IDs are selected.
             """,
-        ),
+        )
+        + plan_section,
     )
     write_text(
         change / "tasks.md",
@@ -142,7 +156,8 @@ def write_openspec(path: Path, idea: Idea) -> None:
             - [ ] Document local install, local run, deployment, and limitations.
             - [ ] Prepare handoff notes for the engineering crew.
             """,
-        ),
+        )
+        + plan_section,
     )
     write_text(
         capability / "spec.md",
@@ -179,7 +194,9 @@ def write_openspec(path: Path, idea: Idea) -> None:
             - **WHEN** the crew reads `handoff.md`
             - **THEN** it can identify mission, inputs, guardrails, and next tasks
             """,
-        ),
+        )
+        + research_section
+        + plan_section,
     )
 
 
