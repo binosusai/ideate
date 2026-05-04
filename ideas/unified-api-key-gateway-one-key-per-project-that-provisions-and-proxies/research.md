@@ -31,30 +31,25 @@ Continue to debate. The idea is strong enough for structured criticism, but not 
 
 **Recommendation:**  
 Target integration-heavy SaaS startups in accelerators with a free tier and Slack onboarding bot. Focus messaging on “single-key onboarding” and rapid key rotation to stand out from generic secrets managers.
-- User Researcher: **Findings:**  
-1. **Trigger:** Developers are prompted to manage multiple third-party API keys when starting new projects or onboarding teammates, especially during integration sprints or compliance reviews.  
-2. **Current Workaround:** Teams juggle plaintext .env files, shared vaults (e.g., AWS Secrets Manager), or ad-hoc scripts. These methods are error-prone, slow, and create onboarding friction—especially when keys change or teammates join/leave.  
-3. **Sharpest Pain Point:** The highest friction is during initial project setup and key rotation: copying, securing, and updating multiple keys across environments leads to mistakes, delays, and security lapses.
-
-**Risks:**  
-1. **Adoption Barrier:** If the unified gateway requires more initial setup than simply copying keys into .env files, developers may abandon it before seeing value.  
-2. **Security Trust:** Users may hesitate to trust a new tool with all their API keys unless its local-only, minimal-permission model is obvious and auditable.
-
-**Recommendation:**  
-Ship a CLI-first, file-backed MVP:  
-- `init` command creates a project and unified key.  
-- `add-api` stores third-party keys locally (encrypted).  
-- `proxy` command starts a local server for API calls.  
-- Success = running a real integration (e.g., Stripe + SendGrid) through the proxy in <30 minutes.  
-- Emphasize local-only, no cloud, no raw key exposure.
-- Technical Scout: **Findings:**
-1. **Minimal Architecture:** A local CLI tool can generate a unified project key, store third-party API keys encrypted in a local file, and run a lightweight local proxy (e.g., Flask/FastAPI) that maps unified key requests to real third-party APIs.  
-2. **Mocking Needs:** For the POC, third-party API endpoints should be mocked (e.g., via httpbin or local stub servers) to avoid handling real credentials and rate limits. Key rotation/revocation logic can be implemented with simple file updates and simulated expiry.  
-3. **Security Constraints:** Local encryption (e.g., using Fernet or OS keyring) is sufficient for POC, but real-world use will require hardened storage, audit logging, and secure key handling—these can be stubbed or logged to file for now.
+- User Researcher: **Findings:**
+1. **Trigger:** Developers are tasked with integrating or rotating multiple third-party APIs (e.g., onboarding a new SaaS integration or responding to a security audit).
+2. **Current Workaround:** Teams use spreadsheets, shared vaults (e.g., 1Password, AWS Secrets Manager), or ad hoc scripts to track and distribute API keys—often resulting in manual copy-paste, inconsistent access, and audit gaps.
+3. **Sharpest Pain Point:** The most acute friction is during urgent key rotation or onboarding/offboarding, where delays or mistakes expose security risks and slow team velocity.
 
 **Risks:**
-1. **Single Point of Failure:** The unified key and local proxy represent a critical security risk—if compromised, all downstream API keys are exposed.  
-2. **Integration Fragility:** Real third-party API integrations may introduce unexpected auth flows (OAuth, JWT, etc.) that are non-trivial to generalize; POC should mock these flows.
+1. **Perceived Overlap:** Users may see the MVP as duplicative of secrets managers, missing the unique proxying/unified-key value unless clearly demonstrated.
+2. **Local-Only Limitation:** A local, file-backed MVP may fail to show value for multi-user or remote teams, limiting validation to solo or small colocated teams.
 
 **Recommendation:**  
-Build the MVP with a local CLI, encrypted file storage, and a mock proxy server. Mock all third-party APIs and key rotation. Defer real integrations and advanced security until after demo validation.
+Design the first-run workflow as: `CLI install → project init → add one third-party API key → generate unified project key → test proxy with sample API call`. Success in week one = user replaces at least one manual key handoff with the unified key and confirms working proxy.
+- Technical Scout: **Findings:**
+1. **Minimal Architecture:** A CLI tool can generate a unified project key, store third-party API keys in an AES-256-encrypted local file, and run a local proxy server that maps unified key requests to real API keys. No cloud or external dependencies are required for the MVP.
+2. **Mocking Needs:** For the POC, third-party API endpoints should be mocked (e.g., via local HTTP servers or stubbed responses) to avoid handling real credentials and to simplify demo setup. Audit logging can be implemented as local file writes.
+3. **Security Constraints:** Local encryption (e.g., using a passphrase or OS keyring) is feasible, but secure key rotation and multi-user access must be deferred or simulated. RBAC and zero-knowledge features should be documented but not built in the POC.
+
+**Risks:**
+1. **Security Gaps:** Local storage is vulnerable if the developer’s machine is compromised; this risk is acceptable for a POC but must be addressed before real usage.
+2. **Integration Complexity:** Mapping arbitrary third-party API schemas to a unified proxy may require custom adapters; for MVP, limit to 1–2 well-known APIs (e.g., Stripe, SendGrid).
+
+**Recommendation:**  
+Build the CLI and local proxy with mock third-party APIs and encrypted file storage. Defer multi-user, cloud sync, and advanced RBAC to post-POC.
