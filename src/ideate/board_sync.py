@@ -134,6 +134,7 @@ def sync_agent_tasks(idea: Idea, stage: str, tasks: Iterable[AgentTaskUpdate]) -
             f"stage:{_slug(stage, max_len=20)}": ("d4c5f9", "Pipeline stage"),
             "task:in-progress": ("f9d458", "Agent task currently running"),
             "task:done": ("2da44e", "Agent task completed"),
+            "task:todo": ("e4e669", "Agent task waiting to start"),
         }
         for name, (color, desc) in static_labels.items():
             _ensure_label(owner, repo_name, token, name, color, desc)
@@ -141,7 +142,12 @@ def sync_agent_tasks(idea: Idea, stage: str, tasks: Iterable[AgentTaskUpdate]) -
         for task in tasks:
             agent_label = f"agent:{_slug(task.agent_name, max_len=20)}"
             _ensure_label(owner, repo_name, token, agent_label, "fbca04", "Agent role")
-            status_label = "task:done" if task.status == "done" else "task:in-progress"
+            if task.status == "done":
+                status_label = "task:done"
+            elif task.status == "in_progress":
+                status_label = "task:in-progress"
+            else:
+                status_label = "task:todo"
             task_key = f"ideate-task:{idea.id}:{_slug(stage, 20)}:{_slug(task.agent_name, 20)}"
 
             output_block = task.output.strip()

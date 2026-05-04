@@ -28,6 +28,7 @@ STAGE_MEMBERS: dict[str, list[str]] = {
         "DevOps Engineer",
         "OpenSpec Writer",
     ],
+    "poc": ["POC Builder"],
 }
 
 
@@ -100,6 +101,27 @@ def store_for(root: Path) -> Store | PgStore:
     return Store(root / ".ideate" / "ideate.sqlite3")
 
 
+def is_eligible_for_auto_pick(idea) -> bool:
+    return not idea.tinkered and idea.review_status != "pending_review" and idea.status not in {
+        "handoff",
+        "completed",
+        "killed",
+        "paused",
+    }
+
+
+def build_iteration_context(store: Store | PgStore, idea_id: int) -> dict[str, str]:
+    decision = store.latest_decision(idea_id)
+    return {
+        "previous_research": store.latest_artifact(idea_id, "research") or "",
+        "previous_debate": store.latest_artifact(idea_id, "debate") or "",
+        "previous_plan": store.latest_artifact(idea_id, "plan") or "",
+        "previous_decision": decision[0] if decision else "",
+        "previous_decision_rationale": decision[1] if decision else "",
+        "review_feedback": store.get_idea(idea_id).review_feedback or "",
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -133,6 +155,14 @@ def main(argv: list[str] | None = None) -> int:
             store.log_run("daily", f"Reviewed {len(ideas)} ideas")
             return 0
 
+        if args.command == "board-setup":
+            idea = store.get_idea(args.idea_id)
+            for stage in [s.strip() for s in args.stages.split(",") if s.strip()]:
+                members = STAGE_MEMBERS.get(stage, [])
+                if members:
+                    sync_agent_tasks(idea, stage, [AgentTaskUpdate(name, "todo") for name in members])
+            return 0
+
         idea = store.get_idea(args.idea_id)
 
         def mark_task_done(stage: str):
@@ -151,7 +181,12 @@ def main(argv: list[str] | None = None) -> int:
                 "research",
                 [AgentTaskUpdate(name, "in_progress") for name in STAGE_MEMBERS["research"]],
             )
-            result = run_research_crew(idea, on_member_complete=mark_task_done("research"))
+            iteration_context = build_iteration_context(store, idea.id)
+            result = run_research_crew(
+                idea,
+                context=iteration_context,
+                on_member_complete=mark_task_done("research"),
+            )
             content = result.synthesis
             store.add_artifact(idea.id, "research", content)
             store.add_artifact(idea.id, "crew-research", result.transcript)
@@ -166,7 +201,13 @@ def main(argv: list[str] | None = None) -> int:
                 [AgentTaskUpdate(name, "in_progress") for name in STAGE_MEMBERS["debate"]],
             )
             research = store.latest_artifact(idea.id, "research")
-            result = run_debate_crew(idea, research, on_member_complete=mark_task_done("debate"))
+            iteration_context = build_iteration_context(store, idea.id)
+            result = run_debate_crew(
+                idea,
+                research,
+                extra_context=iteration_context,
+                on_member_complete=mark_task_done("debate"),
+            )
             content = result.synthesis
             store.add_artifact(idea.id, "debate", content)
             store.add_artifact(idea.id, "crew-debate", result.transcript)
@@ -215,12 +256,37 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Approved idea {idea.id}: {idea.title}")
             return 0
 
+        if args.command == "review":
+            if args.decision == "approve":
+                store.set_review_state(idea.id, "approved", tinkered=True)
+                store.add_decision(idea.id, "poc-approved", args.feedback or "POC approved by user.")
+                print(f"POC approved for idea {idea.id}: {idea.title}")
+            else:
+                note = args.feedback or "POC needs another iteration."
+                store.set_review_state(
+                    idea.id,
+                    "revise",
+                    review_feedback=note,
+                    tinkered=False,
+                )
+                store.add_decision(idea.id, "poc-revise", note)
+                print(f"POC marked for revision for idea {idea.id}: {idea.title}")
+            refresh_readme(root, store.get_idea(idea.id))
+            return 0
+
         if args.command == "poc":
             if idea.status not in {"approved", "poc", "handoff"} and not args.force:
                 print("POC requires approved status. Use --force to override.", file=sys.stderr)
                 return 2
             feasible = write_poc(root, idea, force_build=args.force)
             store.set_status(idea.id, "poc")
+            store.set_review_state(
+                idea.id,
+                "pending_review",
+                review_feedback="",
+                tinkered=False,
+                increment_iteration=True,
+            )
             refresh_readme(root, store.get_idea(idea.id))
             print(f"POC {'created' if feasible else 'skipped'} for idea {idea.id}")
             return 0
@@ -271,6 +337,11 @@ def build_parser() -> argparse.ArgumentParser:
     approve.add_argument("idea_id", type=int)
     approve.add_argument("--rationale", default="")
 
+    review = sub.add_parser("review", help="Record the result of reviewing a generated POC")
+    review.add_argument("idea_id", type=int)
+    review.add_argument("--decision", choices=["approve", "revise"], required=True)
+    review.add_argument("--feedback", default="")
+
     poc = sub.add_parser("poc", help="Create a draft POC")
     poc.add_argument("idea_id", type=int)
     poc.add_argument("--force", action="store_true")
@@ -278,6 +349,10 @@ def build_parser() -> argparse.ArgumentParser:
     handoff = sub.add_parser("handoff", help="Package for engineering crew")
     handoff.add_argument("idea_id", type=int)
     handoff.add_argument("--force", action="store_true")
+
+    board_setup = sub.add_parser("board-setup", help="Pre-create TODO task issues for all agents in given stages")
+    board_setup.add_argument("idea_id", type=int)
+    board_setup.add_argument("--stages", default="research,debate,planning,poc", help="Comma-separated stages")
 
     return parser
 
@@ -302,16 +377,22 @@ def print_daily(ideas) -> None:
         print('Prompt: What exciting idea crossed your mind today? Capture it with `idea capture "..."`.')
         return
 
-    money = [idea for idea in ideas if idea.category == "money"]
-    personal = [idea for idea in ideas if idea.category == "personal"]
-    focus = ideas[0]
+    eligible = [idea for idea in ideas if is_eligible_for_auto_pick(idea)]
+    ranked = eligible or ideas
+    money = [idea for idea in ranked if idea.category == "money"]
+    personal = [idea for idea in ranked if idea.category == "personal"]
+    focus = ranked[0]
     print(f"Primary focus: {format_idea(focus)}")
     if money:
         print(f"Money lane leader: {format_idea(money[0])}")
     if personal:
         print(f"Personal lane reminder: {format_idea(personal[0])}")
     print("\nNext action:")
-    if focus.status == "captured":
+    if focus.review_status == "pending_review":
+        print(f"Review the current POC for idea {focus.id} before selecting another idea.")
+    elif focus.review_status == "revise":
+        print(f"Run: idea research {focus.id}")
+    elif focus.status == "captured":
         print(f"Run: idea research {focus.id}")
     elif focus.status == "researched":
         print(f"Run: idea debate {focus.id}")

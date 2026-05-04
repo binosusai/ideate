@@ -32,53 +32,20 @@ def platform_workspace(root: Path) -> Path:
 
 
 def poc_name(idea: Idea) -> str:
-    # Generate a deterministic one-word codename for POC folder/repo names.
-    # Keeps names short, readable, and stable for a given idea slug.
+    # Derive a short readable codename from the idea slug words.
+    # e.g., "unified-api-key-gateway-..." → "unifiedapi" + 2-char hash suffix.
+    _stop = frozenset({
+        "a", "an", "the", "and", "or", "of", "to", "for", "in", "on",
+        "at", "by", "with", "one", "per", "that", "which", "this", "from",
+        "via", "as", "is", "are", "be", "it", "its", "i", "all",
+    })
+    parts = [p for p in idea.slug.split("-") if p and p not in _stop]
+    words = [p[:8] for p in parts[:2]]
+    base = ("".join(words) or "idea")[:16]
     seed = int(hashlib.sha1(idea.slug.encode("utf-8")).hexdigest(), 16)
-    prefixes = [
-        "nova",
-        "luma",
-        "brio",
-        "viva",
-        "zest",
-        "nexa",
-        "kite",
-        "sola",
-        "mira",
-        "rivo",
-        "pico",
-        "alto",
-        "zeno",
-        "coda",
-        "flux",
-        "aero",
-    ]
-    stems = [
-        "beam",
-        "grid",
-        "nest",
-        "loop",
-        "path",
-        "mint",
-        "dock",
-        "mark",
-        "wave",
-        "bolt",
-        "link",
-        "core",
-        "seed",
-        "peak",
-        "mesh",
-        "roam",
-    ]
-    prefix = prefixes[seed % len(prefixes)]
-    stem = stems[(seed // len(prefixes)) % len(stems)]
-
-    # Two letters keep the codename compact while reducing collisions.
     alpha = "abcdefghijklmnopqrstuvwxyz"
-    suffix_seed = seed // (len(prefixes) * len(stems))
-    suffix = alpha[suffix_seed % 26] + alpha[(suffix_seed // 26) % 26]
-    return f"{prefix}{stem}{suffix}"
+    suffix = alpha[seed % 26] + alpha[(seed // 26) % 26]
+    return f"{base}{suffix}"
 
 
 def poc_dir(root: Path, idea: Idea) -> Path:

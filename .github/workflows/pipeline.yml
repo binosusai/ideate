@@ -13,7 +13,20 @@ on:
       stages:
         description: "Comma-separated stages to run"
         required: false
-        default: "research,debate,plan,approve,poc"
+        default: "research,debate,plan,approve,poc,review"
+        type: string
+      review_outcome:
+        description: "POC review outcome when running the review stage"
+        required: false
+        default: "approve"
+        type: choice
+        options:
+          - approve
+          - revise
+      review_feedback:
+        description: "Feedback for the next iteration when review_outcome=revise"
+        required: false
+        default: ""
         type: string
 
 jobs:
@@ -73,7 +86,7 @@ jobs:
           import psycopg2
 
           idea_id = (os.environ.get("INPUT_IDEA_ID") or "").strip()
-          stages = (os.environ.get("INPUT_STAGES") or "research,debate,plan,approve,poc").strip()
+          stages = (os.environ.get("INPUT_STAGES") or "research,debate,plan,approve,poc,review").strip()
 
           if not idea_id:
             conn = psycopg2.connect(os.environ["DATABASE_URL"])
@@ -84,6 +97,8 @@ jobs:
                   SELECT id
                   FROM ideas
                   WHERE status NOT IN ('handoff', 'completed', 'killed', 'paused')
+                    AND COALESCE(tinkered, FALSE) = FALSE
+                    AND COALESCE(review_status, 'new') <> 'pending_review'
                   ORDER BY
                     CASE category WHEN 'money' THEN 0 ELSE 1 END,
                     score DESC,
@@ -149,6 +164,14 @@ jobs:
             echo "- Title: ${{ steps.idea_meta.outputs.title }}"
             echo "- Slug: ${{ steps.idea_meta.outputs.slug }}"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create task board todos
+        if: steps.pipeline_meta.outputs.idea_id != '0'
+        env:
+          DATABASE_URL:     ${{ secrets.DATABASE_URL }}
+          IDEATE_REQUIRE_DATABASE_URL: "1"
+          GH_TOKEN:         ${{ secrets.GH_PAT }}
+        run: idea board-setup ${{ steps.pipeline_meta.outputs.idea_id }} --stages "${{ steps.pipeline_meta.outputs.stages }}"
 
       - name: Research
         if: steps.pipeline_meta.outputs.idea_id != '0' && contains(steps.pipeline_meta.outputs.stages, 'research')
@@ -317,6 +340,7 @@ jobs:
   poc:
     name: Build POC & create repo
     needs: plan
+    if: needs.plan.outputs.idea_id != '0' && contains(needs.plan.outputs.stages, 'poc')
     runs-on: ubuntu-latest
     # ⬇ This line makes GitHub pause here and email you for approval
     environment: poc-approval
@@ -347,7 +371,6 @@ jobs:
           idea approve ${{ needs.plan.outputs.idea_id }} --rationale "Approved via poc-approval environment gate."
 
       - name: Build POC & push new repo
-        if: needs.plan.outputs.idea_id != '0' && contains(needs.plan.outputs.stages, 'poc')
         env:
           DATABASE_URL:      ${{ secrets.DATABASE_URL }}
           IDEATE_REQUIRE_DATABASE_URL: "1"
@@ -364,3 +387,36 @@ jobs:
           echo "  title: ${{ needs.plan.outputs.idea_title }}"
           echo "  slug:  ${{ needs.plan.outputs.idea_slug }}"
           idea poc ${{ needs.plan.outputs.idea_id }} --force
+
+  review:
+    name: Review generated POC
+    needs: plan
+    runs-on: ubuntu-latest
+    if: needs.plan.outputs.idea_id != '0' && contains(needs.plan.outputs.stages, 'review')
+    environment: poc-review
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install ideate deps
+        run: pip install -e ".[postgres]" agentops
+
+      - name: Record POC review outcome
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          IDEATE_REQUIRE_DATABASE_URL: "1"
+          REVIEW_OUTCOME: ${{ github.event.inputs.review_outcome || 'approve' }}
+          REVIEW_FEEDBACK: ${{ github.event.inputs.review_feedback || '' }}
+        run: |
+          echo "Reviewing POC"
+          echo "  id:      ${{ needs.plan.outputs.idea_id }}"
+          echo "  title:   ${{ needs.plan.outputs.idea_title }}"
+          echo "  outcome: $REVIEW_OUTCOME"
+          idea review ${{ needs.plan.outputs.idea_id }} --decision "$REVIEW_OUTCOME" --feedback "$REVIEW_FEEDBACK"
