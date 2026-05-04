@@ -167,6 +167,7 @@ jobs:
 
       - name: Create task board todos
         if: steps.pipeline_meta.outputs.idea_id != '0'
+        continue-on-error: true
         env:
           DATABASE_URL:     ${{ secrets.DATABASE_URL }}
           IDEATE_REQUIRE_DATABASE_URL: "1"

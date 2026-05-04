@@ -160,7 +160,17 @@ def main(argv: list[str] | None = None) -> int:
             for stage in [s.strip() for s in args.stages.split(",") if s.strip()]:
                 members = STAGE_MEMBERS.get(stage, [])
                 if members:
-                    sync_agent_tasks(idea, stage, [AgentTaskUpdate(name, "todo") for name in members])
+                    try:
+                        sync_agent_tasks(
+                            idea,
+                            stage,
+                            [AgentTaskUpdate(name, "todo") for name in members],
+                        )
+                    except Exception as exc:
+                        print(
+                            f"[ideate] board-setup warning for stage '{stage}': {exc}",
+                            file=sys.stderr,
+                        )
             return 0
 
         idea = store.get_idea(args.idea_id)

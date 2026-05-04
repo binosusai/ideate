@@ -18,6 +18,13 @@ STATUSES = {
     "killed",
 }
 
+REVIEW_STATUSES = {
+    "new",
+    "pending_review",
+    "approved",
+    "revise",
+}
+
 
 @dataclass(frozen=True)
 class Idea:
@@ -30,3 +37,8 @@ class Idea:
     score: float
     created_at: str
     updated_at: str
+    tinkered: bool = False
+    review_status: str = "new"
+    review_feedback: str = ""
+    last_reviewed_at: str | None = None
+    iteration_count: int = 0

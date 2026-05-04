@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ideate.cli import main
+from ideate.cli import build_iteration_context, is_eligible_for_auto_pick, main
+from ideate.db import Store
 
 
 def run(root: Path, *args: str) -> int:
@@ -69,3 +70,55 @@ def test_poc_requires_approval_without_force(tmp_path: Path) -> None:
 def test_daily_handles_empty_database(tmp_path: Path) -> None:
     assert run(tmp_path, "init") == 0
     assert run(tmp_path, "daily") == 0
+
+
+def test_poc_enters_pending_review_and_blocks_auto_pick(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("IDEATE_SKIP_GITHUB_REPO_CREATE", "1")
+    assert run(tmp_path, "init") == 0
+    assert run(tmp_path, "capture", "First idea", "--category", "money") == 0
+    assert run(tmp_path, "capture", "Second idea", "--category", "money") == 0
+    assert run(tmp_path, "approve", "1") == 0
+    assert run(tmp_path, "poc", "1", "--force") == 0
+
+    store = Store(tmp_path / ".ideate" / "ideate.sqlite3")
+    first = store.get_idea(1)
+    second = store.get_idea(2)
+
+    assert first.review_status == "pending_review"
+    assert first.tinkered is False
+    assert first.iteration_count == 1
+    assert is_eligible_for_auto_pick(first) is False
+    assert is_eligible_for_auto_pick(second) is True
+
+
+def test_review_feedback_is_cached_for_next_iteration(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("IDEATE_SKIP_GITHUB_REPO_CREATE", "1")
+    assert run(tmp_path, "init") == 0
+    assert run(tmp_path, "capture", "Proxy gateway", "--category", "money") == 0
+    assert run(tmp_path, "research", "1") == 0
+    assert run(tmp_path, "debate", "1") == 0
+    assert run(tmp_path, "plan", "1") == 0
+    assert run(tmp_path, "approve", "1") == 0
+    assert run(tmp_path, "poc", "1", "--force") == 0
+    assert run(
+        tmp_path,
+        "review",
+        "1",
+        "--decision",
+        "revise",
+        "--feedback",
+        "Make onboarding simpler and tighten the proxy flow.",
+    ) == 0
+
+    store = Store(tmp_path / ".ideate" / "ideate.sqlite3")
+    idea = store.get_idea(1)
+    context = build_iteration_context(store, 1)
+
+    assert idea.review_status == "revise"
+    assert idea.tinkered is False
+    assert idea.review_feedback == "Make onboarding simpler and tighten the proxy flow."
+    assert context["review_feedback"] == "Make onboarding simpler and tighten the proxy flow."
+    assert context["previous_research"]
+    assert context["previous_debate"]
+    assert context["previous_plan"]
+    assert context["previous_decision"] == "poc-revise"

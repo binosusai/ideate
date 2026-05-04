@@ -136,6 +136,7 @@ def _run_members_parallel(
 
 def run_research_crew(
     idea: Idea,
+    context: dict[str, str] | None = None,
     on_member_complete: Callable[[str, str], None] | None = None,
 ) -> CrewResult:
     members = [
@@ -161,12 +162,20 @@ def run_research_crew(
             temperature=0.2,
         ),
     ]
-    return run_crew("research", idea, members, synthesize_research, on_member_complete=on_member_complete)
+    return run_crew(
+        "research",
+        idea,
+        members,
+        synthesize_research,
+        context or {},
+        on_member_complete=on_member_complete,
+    )
 
 
 def run_debate_crew(
     idea: Idea,
     research: str | None,
+    extra_context: dict[str, str] | None = None,
     on_member_complete: Callable[[str, str], None] | None = None,
 ) -> CrewResult:
     members = [
@@ -199,11 +208,12 @@ def run_debate_crew(
             temperature=0.25,
         ),
     ]
+    context = {"research": research or ""} | (extra_context or {})
     if os.environ.get("IDEATE_STRICT_DEBATE") == "1":
         return run_debate_crew_strict(
             idea,
             members,
-            {"research": research or ""},
+            context,
             on_member_complete=on_member_complete,
         )
     return run_crew(
@@ -211,7 +221,7 @@ def run_debate_crew(
         idea,
         members,
         synthesize_debate,
-        {"research": research or ""},
+        context,
         on_member_complete=on_member_complete,
     )
 

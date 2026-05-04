@@ -1,7 +1,7 @@
 # Unified API key gateway — one key per project that provisions and proxies all third-party tool API keys
 
 ## Status
-`planned`
+`poc`
 
 ## Category
 `money`
