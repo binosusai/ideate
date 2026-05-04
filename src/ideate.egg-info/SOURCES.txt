@@ -2,6 +2,7 @@ README.md
 pyproject.toml
 src/ideate/__init__.py
 src/ideate/agents.py
+src/ideate/board_sync.py
 src/ideate/cli.py
 src/ideate/crew.py
 src/ideate/db.py
