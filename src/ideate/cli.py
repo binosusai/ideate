@@ -135,21 +135,23 @@ def main(argv: list[str] | None = None) -> int:
 
         idea = store.get_idea(args.idea_id)
 
+        def mark_task_done(stage: str):
+            def _mark(agent_name: str, output: str) -> None:
+                sync_agent_tasks(
+                    idea,
+                    stage,
+                    [AgentTaskUpdate(agent_name, "done", output)],
+                )
+
+            return _mark
+
         if args.command == "research":
             sync_agent_tasks(
                 idea,
                 "research",
                 [AgentTaskUpdate(name, "in_progress") for name in STAGE_MEMBERS["research"]],
             )
-            result = run_research_crew(idea)
-            sync_agent_tasks(
-                idea,
-                "research",
-                [
-                    AgentTaskUpdate(name, "done", output)
-                    for name, output in result.member_outputs.items()
-                ],
-            )
+            result = run_research_crew(idea, on_member_complete=mark_task_done("research"))
             content = result.synthesis
             store.add_artifact(idea.id, "research", content)
             store.add_artifact(idea.id, "crew-research", result.transcript)
@@ -164,15 +166,7 @@ def main(argv: list[str] | None = None) -> int:
                 [AgentTaskUpdate(name, "in_progress") for name in STAGE_MEMBERS["debate"]],
             )
             research = store.latest_artifact(idea.id, "research")
-            result = run_debate_crew(idea, research)
-            sync_agent_tasks(
-                idea,
-                "debate",
-                [
-                    AgentTaskUpdate(name, "done", output)
-                    for name, output in result.member_outputs.items()
-                ],
-            )
+            result = run_debate_crew(idea, research, on_member_complete=mark_task_done("debate"))
             content = result.synthesis
             store.add_artifact(idea.id, "debate", content)
             store.add_artifact(idea.id, "crew-debate", result.transcript)
@@ -188,14 +182,11 @@ def main(argv: list[str] | None = None) -> int:
             )
             research = store.latest_artifact(idea.id, "research") or research_brief(idea)
             debate = store.latest_artifact(idea.id, "debate") or debate_brief(idea, research)
-            result = run_planning_crew(idea, research, debate)
-            sync_agent_tasks(
+            result = run_planning_crew(
                 idea,
-                "planning",
-                [
-                    AgentTaskUpdate(name, "done", output)
-                    for name, output in result.member_outputs.items()
-                ],
+                research,
+                debate,
+                on_member_complete=mark_task_done("planning"),
             )
             plan = result.synthesis
             store.add_artifact(idea.id, "research", research)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
 import re
 from dataclasses import dataclass
@@ -104,9 +104,10 @@ def _run_members_parallel(
     context: dict[str, str],
     prior_outputs: dict[str, str],
     round_label: str = "opening",
+    on_member_complete: Callable[[str, str], None] | None = None,
 ) -> dict[str, str]:
     worker_count = _parallel_workers(len(members))
-    outputs: dict[str, str] = {}
+    completed_outputs: dict[str, str] = {}
     with ThreadPoolExecutor(max_workers=worker_count) as executor:
         future_map = {
             executor.submit(
@@ -121,12 +122,22 @@ def _run_members_parallel(
             ): _member_display_name(stage, member)
             for member in members
         }
-        for future, member_name in future_map.items():
-            outputs[member_name] = future.result()
-    return outputs
+        for future in as_completed(future_map):
+            member_name = future_map[future]
+            output = future.result()
+            completed_outputs[member_name] = output
+            if on_member_complete:
+                on_member_complete(member_name, output)
+    return {
+        _member_display_name(stage, member): completed_outputs[_member_display_name(stage, member)]
+        for member in members
+    }
 
 
-def run_research_crew(idea: Idea) -> CrewResult:
+def run_research_crew(
+    idea: Idea,
+    on_member_complete: Callable[[str, str], None] | None = None,
+) -> CrewResult:
     members = [
         CrewMember(
             "Market Researcher",
@@ -150,10 +161,14 @@ def run_research_crew(idea: Idea) -> CrewResult:
             temperature=0.2,
         ),
     ]
-    return run_crew("research", idea, members, synthesize_research)
+    return run_crew("research", idea, members, synthesize_research, on_member_complete=on_member_complete)
 
 
-def run_debate_crew(idea: Idea, research: str | None) -> CrewResult:
+def run_debate_crew(
+    idea: Idea,
+    research: str | None,
+    on_member_complete: Callable[[str, str], None] | None = None,
+) -> CrewResult:
     members = [
         CrewMember(
             "Advocate",
@@ -185,14 +200,27 @@ def run_debate_crew(idea: Idea, research: str | None) -> CrewResult:
         ),
     ]
     if os.environ.get("IDEATE_STRICT_DEBATE") == "1":
-        return run_debate_crew_strict(idea, members, {"research": research or ""})
-    return run_crew("debate", idea, members, synthesize_debate, {"research": research or ""})
+        return run_debate_crew_strict(
+            idea,
+            members,
+            {"research": research or ""},
+            on_member_complete=on_member_complete,
+        )
+    return run_crew(
+        "debate",
+        idea,
+        members,
+        synthesize_debate,
+        {"research": research or ""},
+        on_member_complete=on_member_complete,
+    )
 
 
 def run_debate_crew_strict(
     idea: Idea,
     members: list[CrewMember],
     context: dict[str, str],
+    on_member_complete: Callable[[str, str], None] | None = None,
 ) -> CrewResult:
     opening_outputs: dict[str, str]
     if os.environ.get("IDEATE_PARALLEL", "1") == "1":
@@ -214,6 +242,17 @@ def run_debate_crew_strict(
             round_two_context,
             opening_outputs,
             "rebuttal",
+            on_member_complete=(
+                lambda member_name, output: on_member_complete(
+                    member_name,
+                    "Round 1 - Opening Statement:\n"
+                    + opening_outputs[member_name]
+                    + "\n\nRound 2 - Rebuttal:\n"
+                    + output,
+                )
+                if on_member_complete
+                else None
+            ),
         )
     else:
         rebuttal_outputs: dict[str, str] = {}
@@ -227,6 +266,14 @@ def run_debate_crew_strict(
                 opening_outputs | rebuttal_outputs,
                 round_label="rebuttal",
             )
+            if on_member_complete:
+                on_member_complete(
+                    member_name,
+                    "Round 1 - Opening Statement:\n"
+                    + opening_outputs[member_name]
+                    + "\n\nRound 2 - Rebuttal:\n"
+                    + rebuttal_outputs[member_name],
+                )
 
     outputs = {
         _member_display_name("debate", member): (
@@ -250,9 +297,12 @@ def run_debate_crew_strict(
         transcript=crew_transcript("debate", idea, members, outputs, synthesis),
         member_outputs=outputs,
     )
-
-
-def run_planning_crew(idea: Idea, research: str | None, debate: str | None) -> CrewResult:
+def run_planning_crew(
+    idea: Idea,
+    research: str | None,
+    debate: str | None,
+    on_member_complete: Callable[[str, str], None] | None = None,
+) -> CrewResult:
     members = [
         CrewMember(
             "Product Planner",
@@ -319,7 +369,14 @@ def run_planning_crew(idea: Idea, research: str | None, debate: str | None) -> C
         ),
     ]
     context = {"research": research or "", "debate": debate or ""}
-    return run_crew("planning", idea, members, synthesize_plan, context)
+    return run_crew(
+        "planning",
+        idea,
+        members,
+        synthesize_plan,
+        context,
+        on_member_complete=on_member_complete,
+    )
 
 
 def run_crew(
@@ -328,15 +385,25 @@ def run_crew(
     members: list[CrewMember],
     synthesizer: Callable[[Idea, dict[str, str], dict[str, str]], str],
     context: dict[str, str] | None = None,
+    on_member_complete: Callable[[str, str], None] | None = None,
 ) -> CrewResult:
     context = context or {}
     if _parallel_enabled(stage):
-        outputs = _run_members_parallel(stage, members, idea, context, {})
+        outputs = _run_members_parallel(
+            stage,
+            members,
+            idea,
+            context,
+            {},
+            on_member_complete=on_member_complete,
+        )
     else:
         outputs: dict[str, str] = {}
         for member in members:
             member_name = _member_display_name(stage, member)
             outputs[member_name] = _run_member(stage, member, idea, context, outputs)
+            if on_member_complete:
+                on_member_complete(member_name, outputs[member_name])
     synthesis = synthesizer(idea, context, outputs)
     _record_crew_event(stage, idea.title, [_member_display_name(stage, m) for m in members], synthesis)
     return CrewResult(
