@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 from ideate.cli import build_iteration_context, is_eligible_for_auto_pick, main
@@ -133,3 +134,59 @@ def test_review_feedback_is_cached_for_next_iteration(tmp_path: Path, monkeypatc
     assert context["previous_debate"]
     assert context["previous_plan"]
     assert context["previous_decision"] == "poc-revise"
+
+
+def test_stage_commands_reuse_cached_artifacts_and_keep_openspec_context(tmp_path: Path) -> None:
+    assert run(tmp_path, "init") == 0
+    assert run(tmp_path, "capture", "Unified API Gateway", "--category", "money") == 0
+    assert run(tmp_path, "research", "1") == 0
+    assert run(tmp_path, "debate", "1") == 0
+    assert run(tmp_path, "plan", "1") == 0
+
+    db_path = tmp_path / ".ideate" / "ideate.sqlite3"
+    with sqlite3.connect(db_path) as conn:
+        counts_before = {
+            kind: conn.execute(
+                "SELECT COUNT(*) FROM artifacts WHERE idea_id = 1 AND kind = ?",
+                (kind,),
+            ).fetchone()[0]
+            for kind in ("research", "debate", "plan")
+        }
+
+    # These reruns should reuse cached artifacts, not append duplicate artifacts.
+    assert run(tmp_path, "research", "1") == 0
+    assert run(tmp_path, "debate", "1") == 0
+    assert run(tmp_path, "plan", "1") == 0
+
+    with sqlite3.connect(db_path) as conn:
+        counts_after = {
+            kind: conn.execute(
+                "SELECT COUNT(*) FROM artifacts WHERE idea_id = 1 AND kind = ?",
+                (kind,),
+            ).fetchone()[0]
+            for kind in ("research", "debate", "plan")
+        }
+
+    assert counts_after == counts_before
+
+    idea_folder = next((tmp_path / "ideas").iterdir())
+    proposal = (
+        idea_folder
+        / "openspec"
+        / "changes"
+        / idea_folder.name
+        / "proposal.md"
+    ).read_text(encoding="utf-8")
+    spec = (
+        idea_folder
+        / "openspec"
+        / "changes"
+        / idea_folder.name
+        / "specs"
+        / "unified-api-gateway"
+        / "spec.md"
+    ).read_text(encoding="utf-8")
+
+    assert "## Research Context" in proposal
+    assert "## Debate Context" in proposal
+    assert "## Implementation Plan" in spec

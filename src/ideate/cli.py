@@ -32,6 +32,14 @@ STAGE_MEMBERS: dict[str, list[str]] = {
 }
 
 
+def _mark_stage_reused(idea, stage: str, summary: str) -> None:
+    sync_agent_tasks(
+        idea,
+        stage,
+        [AgentTaskUpdate(name, "done", summary) for name in STAGE_MEMBERS.get(stage, [])],
+    )
+
+
 def _agentops_init() -> bool:
     """Start an AgentOps session if AGENTOPS_API_KEY is set. Returns True if started."""
     api_key = os.environ.get("AGENTOPS_API_KEY")
@@ -204,6 +212,13 @@ def main(argv: list[str] | None = None) -> int:
             return _mark
 
         if args.command == "research":
+            cached = store.latest_artifact(idea.id, "research")
+            if cached and not args.force_refresh:
+                _mark_stage_reused(idea, "research", "Reused cached research artifact.")
+                store.set_status(idea.id, "researched")
+                print(cached)
+                return 0
+
             sync_agent_tasks(
                 idea,
                 "research",
@@ -223,6 +238,13 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "debate":
+            cached = store.latest_artifact(idea.id, "debate")
+            if cached and not args.force_refresh:
+                _mark_stage_reused(idea, "debate", "Reused cached debate artifact.")
+                store.set_status(idea.id, "debated")
+                print(cached)
+                return 0
+
             sync_agent_tasks(
                 idea,
                 "debate",
@@ -244,6 +266,26 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "plan":
+            cached_plan = store.latest_artifact(idea.id, "plan")
+            if cached_plan and not args.force_refresh:
+                research = store.latest_artifact(idea.id, "research") or research_brief(idea)
+                debate = store.latest_artifact(idea.id, "debate") or debate_brief(idea, research)
+                _mark_stage_reused(idea, "planning", "Reused cached plan artifact.")
+                store.set_status(idea.id, "planned")
+                planned = store.get_idea(idea.id)
+                crew_transcripts = [
+                    value
+                    for value in (
+                        store.latest_artifact(idea.id, "crew-research"),
+                        store.latest_artifact(idea.id, "crew-debate"),
+                        store.latest_artifact(idea.id, "crew-planning"),
+                    )
+                    if value
+                ]
+                path = write_planning_files(root, planned, research, debate, cached_plan, crew_transcripts)
+                print(f"Planned idea {idea.id} at {path}")
+                return 0
+
             sync_agent_tasks(
                 idea,
                 "planning",
@@ -360,6 +402,11 @@ def build_parser() -> argparse.ArgumentParser:
     for name in ("research", "debate", "plan"):
         cmd = sub.add_parser(name, help=f"{name.title()} an idea")
         cmd.add_argument("idea_id", type=int)
+        cmd.add_argument(
+            "--force-refresh",
+            action="store_true",
+            help="Ignore cached artifact and regenerate this stage.",
+        )
 
     approve = sub.add_parser("approve", help="Approve an idea")
     approve.add_argument("idea_id", type=int)
