@@ -7,10 +7,28 @@ import sys
 from pathlib import Path
 
 from .agents import debate_brief, research_brief
+from .board_sync import AgentTaskUpdate, sync_agent_tasks
 from .crew import run_debate_crew, run_planning_crew, run_research_crew
 from .db import PgStore, Store
 from .models import CATEGORIES
 from .projects import refresh_readme, write_handoff, write_planning_files, write_poc
+
+
+STAGE_MEMBERS: dict[str, list[str]] = {
+    "research": ["Market Researcher", "User Researcher", "Technical Scout"],
+    "debate": ["Advocate", "Skeptic", "Builder", "Strategist"],
+    "planning": [
+        "Product Planner",
+        "POC Coder",
+        "Frontend Engineer",
+        "Backend Engineer",
+        "Auth Engineer",
+        "Database Engineer",
+        "Infra Engineer",
+        "DevOps Engineer",
+        "OpenSpec Writer",
+    ],
+}
 
 
 def _agentops_init() -> bool:
@@ -114,7 +132,20 @@ def main(argv: list[str] | None = None) -> int:
         idea = store.get_idea(args.idea_id)
 
         if args.command == "research":
+            sync_agent_tasks(
+                idea,
+                "research",
+                [AgentTaskUpdate(name, "in_progress") for name in STAGE_MEMBERS["research"]],
+            )
             result = run_research_crew(idea)
+            sync_agent_tasks(
+                idea,
+                "research",
+                [
+                    AgentTaskUpdate(name, "done", output)
+                    for name, output in result.member_outputs.items()
+                ],
+            )
             content = result.synthesis
             store.add_artifact(idea.id, "research", content)
             store.add_artifact(idea.id, "crew-research", result.transcript)
@@ -123,8 +154,21 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "debate":
+            sync_agent_tasks(
+                idea,
+                "debate",
+                [AgentTaskUpdate(name, "in_progress") for name in STAGE_MEMBERS["debate"]],
+            )
             research = store.latest_artifact(idea.id, "research")
             result = run_debate_crew(idea, research)
+            sync_agent_tasks(
+                idea,
+                "debate",
+                [
+                    AgentTaskUpdate(name, "done", output)
+                    for name, output in result.member_outputs.items()
+                ],
+            )
             content = result.synthesis
             store.add_artifact(idea.id, "debate", content)
             store.add_artifact(idea.id, "crew-debate", result.transcript)
@@ -133,9 +177,22 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "plan":
+            sync_agent_tasks(
+                idea,
+                "planning",
+                [AgentTaskUpdate(name, "in_progress") for name in STAGE_MEMBERS["planning"]],
+            )
             research = store.latest_artifact(idea.id, "research") or research_brief(idea)
             debate = store.latest_artifact(idea.id, "debate") or debate_brief(idea, research)
             result = run_planning_crew(idea, research, debate)
+            sync_agent_tasks(
+                idea,
+                "planning",
+                [
+                    AgentTaskUpdate(name, "done", output)
+                    for name, output in result.member_outputs.items()
+                ],
+            )
             plan = result.synthesis
             store.add_artifact(idea.id, "research", research)
             store.add_artifact(idea.id, "debate", debate)

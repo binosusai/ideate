@@ -1,6 +1,9 @@
 name: Ideate Pipeline
 
 on:
+  schedule:
+    # Run after daily review (09:00 UTC) to process next queued idea.
+    - cron: '20 9 * * *'
   workflow_dispatch:
     inputs:
       idea_id:
@@ -18,6 +21,9 @@ jobs:
   plan:
     name: Research, debate & plan
     runs-on: ubuntu-latest
+    outputs:
+      idea_id: ${{ steps.pipeline_meta.outputs.idea_id }}
+      stages: ${{ steps.pipeline_meta.outputs.stages }}
     permissions:
       contents: write
     env:
@@ -51,50 +57,98 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: idea init
 
+      - name: Resolve pipeline inputs
+        id: pipeline_meta
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          INPUT_IDEA_ID: ${{ github.event.inputs.idea_id || '' }}
+          INPUT_STAGES: ${{ github.event.inputs.stages || '' }}
+        run: |
+          python - <<'PY'
+          import os
+          import psycopg2
+
+          idea_id = (os.environ.get("INPUT_IDEA_ID") or "").strip()
+          stages = (os.environ.get("INPUT_STAGES") or "research,debate,plan,approve,poc").strip()
+
+          if not idea_id:
+            conn = psycopg2.connect(os.environ["DATABASE_URL"])
+            try:
+              with conn.cursor() as cur:
+                cur.execute(
+                  """
+                  SELECT id
+                  FROM ideas
+                  WHERE status NOT IN ('handoff', 'completed', 'killed', 'paused')
+                  ORDER BY
+                    CASE category WHEN 'money' THEN 0 ELSE 1 END,
+                    score DESC,
+                    updated_at DESC
+                  LIMIT 1
+                  """
+                )
+                row = cur.fetchone()
+                idea_id = str(row[0]) if row else "0"
+            finally:
+              conn.close()
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+            fh.write(f"idea_id={idea_id}\n")
+            fh.write(f"stages={stages}\n")
+          print(f"Resolved idea_id={idea_id}, stages={stages}")
+          PY
+
+      - name: No queued idea
+        if: steps.pipeline_meta.outputs.idea_id == '0'
+        run: echo "No eligible idea found in DB. Skipping this scheduled pipeline run."
+
       - name: Research
-        if: contains(inputs.stages, 'research')
+        if: steps.pipeline_meta.outputs.idea_id != '0' && contains(steps.pipeline_meta.outputs.stages, 'research')
         env:
           DATABASE_URL:     ${{ secrets.DATABASE_URL }}
           AGENTOPS_API_KEY: ${{ secrets.AGENTOPS_API_KEY }}
           OPENAI_API_KEY:   ${{ secrets.OPENAI_API_KEY }}
+          GH_TOKEN:         ${{ secrets.GH_PAT }}
           IDEATE_MODEL_RESEARCH: gpt-4.1
           IDEATE_PARALLEL: "1"
           IDEATE_MAX_PARALLEL_AGENTS: "4"
           IDEATE_REQUIRE_LLM: "1"
-        run: idea research ${{ inputs.idea_id }}
+        run: idea research ${{ steps.pipeline_meta.outputs.idea_id }}
 
       - name: Debate
-        if: contains(inputs.stages, 'debate')
+        if: steps.pipeline_meta.outputs.idea_id != '0' && contains(steps.pipeline_meta.outputs.stages, 'debate')
         env:
           DATABASE_URL:     ${{ secrets.DATABASE_URL }}
           AGENTOPS_API_KEY: ${{ secrets.AGENTOPS_API_KEY }}
           OPENAI_API_KEY:   ${{ secrets.OPENAI_API_KEY }}
+          GH_TOKEN:         ${{ secrets.GH_PAT }}
           IDEATE_MODEL_DEBATE: gpt-4.1
           IDEATE_STRICT_DEBATE: "1"
           IDEATE_PARALLEL: "1"
           IDEATE_MAX_PARALLEL_AGENTS: "4"
           IDEATE_REQUIRE_LLM: "1"
-        run: idea debate ${{ inputs.idea_id }}
+        run: idea debate ${{ steps.pipeline_meta.outputs.idea_id }}
 
       - name: Plan
-        if: contains(inputs.stages, 'plan')
+        if: steps.pipeline_meta.outputs.idea_id != '0' && contains(steps.pipeline_meta.outputs.stages, 'plan')
         env:
           DATABASE_URL:     ${{ secrets.DATABASE_URL }}
           AGENTOPS_API_KEY: ${{ secrets.AGENTOPS_API_KEY }}
           OPENAI_API_KEY:   ${{ secrets.OPENAI_API_KEY }}
+          GH_TOKEN:         ${{ secrets.GH_PAT }}
           IDEATE_MODEL_PLANNING: gpt-4.1-mini
           IDEATE_PARALLEL: "1"
           IDEATE_MAX_PARALLEL_AGENTS: "5"
           IDEATE_REQUIRE_LLM: "1"
           IDEATE_HOME:      ${{ github.workspace }}
-        run: idea plan ${{ inputs.idea_id }}
+        run: idea plan ${{ steps.pipeline_meta.outputs.idea_id }}
 
       - name: Resolve idea metadata
-        if: contains(inputs.stages, 'plan')
+        if: steps.pipeline_meta.outputs.idea_id != '0' && contains(steps.pipeline_meta.outputs.stages, 'plan')
         id: idea_meta
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          IDEA_ID: ${{ inputs.idea_id }}
+          IDEA_ID: ${{ steps.pipeline_meta.outputs.idea_id }}
         run: |
           python - <<'PY'
           import os
@@ -117,9 +171,9 @@ jobs:
           PY
 
       - name: Build proposal email body
-        if: contains(inputs.stages, 'plan')
+        if: steps.pipeline_meta.outputs.idea_id != '0' && contains(steps.pipeline_meta.outputs.stages, 'plan')
         env:
-          IDEA_ID: ${{ inputs.idea_id }}
+          IDEA_ID: ${{ steps.pipeline_meta.outputs.idea_id }}
           IDEA_SLUG: ${{ steps.idea_meta.outputs.slug }}
           IDEA_TITLE: ${{ steps.idea_meta.outputs.title }}
         run: |
@@ -140,17 +194,17 @@ jobs:
           } > /tmp/proposal_email.txt
 
       - name: Upload proposal artifacts
-        if: contains(inputs.stages, 'plan')
+        if: steps.pipeline_meta.outputs.idea_id != '0' && contains(steps.pipeline_meta.outputs.stages, 'plan')
         uses: actions/upload-artifact@v4
         with:
-          name: idea-${{ inputs.idea_id }}-proposal
+          name: idea-${{ steps.pipeline_meta.outputs.idea_id }}-proposal
           path: |
             ideas/${{ steps.idea_meta.outputs.slug }}/research.md
             ideas/${{ steps.idea_meta.outputs.slug }}/debate.md
             ideas/${{ steps.idea_meta.outputs.slug }}/implementation_plan.md
 
       - name: Email proposal
-        if: contains(inputs.stages, 'plan') && env.SMTP_HOST != '' && env.SMTP_USER != '' && env.SMTP_PASS != '' && env.IDEATE_EMAIL_TO != '' && env.IDEATE_EMAIL_FROM != ''
+        if: steps.pipeline_meta.outputs.idea_id != '0' && contains(steps.pipeline_meta.outputs.stages, 'plan') && env.SMTP_HOST != '' && env.SMTP_USER != '' && env.SMTP_PASS != '' && env.IDEATE_EMAIL_TO != '' && env.IDEATE_EMAIL_FROM != ''
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: ${{ env.SMTP_HOST }}
@@ -158,17 +212,81 @@ jobs:
           secure: false
           username: ${{ env.SMTP_USER }}
           password: ${{ env.SMTP_PASS }}
-          subject: Ideate proposal for idea #${{ inputs.idea_id }} - ${{ steps.idea_meta.outputs.title }}
+          subject: Ideate proposal for idea #${{ steps.pipeline_meta.outputs.idea_id }} - ${{ steps.idea_meta.outputs.title }}
           to: ${{ env.IDEATE_EMAIL_TO }}
           from: ${{ env.IDEATE_EMAIL_FROM }}
           body: file:///tmp/proposal_email.txt
 
       - name: Commit planning files back to repo
-        if: contains(inputs.stages, 'plan')
+        if: steps.pipeline_meta.outputs.idea_id != '0' && contains(steps.pipeline_meta.outputs.stages, 'plan')
         run: |
           git add ideas/ || true
-          git diff --cached --quiet || git commit -m "chore: planning files for idea ${{ inputs.idea_id }} [skip ci]"
+          git diff --cached --quiet || git commit -m "chore: planning files for idea ${{ steps.pipeline_meta.outputs.idea_id }} [skip ci]"
           git push
+
+      - name: Build status dashboard
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python - <<'PY'
+          import os
+          import psycopg2
+
+          conn = psycopg2.connect(os.environ["DATABASE_URL"])
+          try:
+            with conn.cursor() as cur:
+              cur.execute(
+                """
+                SELECT status, COUNT(*)
+                FROM ideas
+                GROUP BY status
+                ORDER BY COUNT(*) DESC, status ASC
+                """
+              )
+              status_rows = cur.fetchall()
+              cur.execute(
+                """
+                SELECT id, title, status, score
+                FROM ideas
+                ORDER BY
+                  CASE category WHEN 'money' THEN 0 ELSE 1 END,
+                  score DESC,
+                  updated_at DESC
+                LIMIT 12
+                """
+              )
+              ideas = cur.fetchall()
+          finally:
+            conn.close()
+
+          lines = [
+            "# Ideate Status Dashboard",
+            "",
+            "## Status Counts",
+          ]
+          if not status_rows:
+            lines.append("- No ideas found")
+          else:
+            lines.extend(f"- {status}: {count}" for status, count in status_rows)
+          lines += ["", "## Top Ideas", "| ID | Title | Status | Score |", "|---|---|---|---|"]
+          for idea_id, title, status, score in ideas:
+            safe_title = str(title).replace("|", "\\|")
+            lines.append(f"| {idea_id} | {safe_title} | {status} | {float(score):.1f} |")
+          if not ideas:
+            lines.append("| - | No ideas | - | - |")
+
+          with open("/tmp/ideate-status-dashboard.md", "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+          PY
+          cat /tmp/ideate-status-dashboard.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload status dashboard
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ideate-status-dashboard
+          path: /tmp/ideate-status-dashboard.md
 
   # ── Job 2: POC — requires manual approval via the 'poc-approval' environment ─
   poc:
@@ -192,13 +310,13 @@ jobs:
         run: pip install -e ".[postgres]" agentops
 
       - name: Approve idea
-        if: contains(inputs.stages, 'approve')
+        if: needs.plan.outputs.idea_id != '0' && contains(needs.plan.outputs.stages, 'approve')
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: idea approve ${{ inputs.idea_id }} --rationale "Approved via poc-approval environment gate."
+        run: idea approve ${{ needs.plan.outputs.idea_id }} --rationale "Approved via poc-approval environment gate."
 
       - name: Build POC & push new repo
-        if: contains(inputs.stages, 'poc')
+        if: needs.plan.outputs.idea_id != '0' && contains(needs.plan.outputs.stages, 'poc')
         env:
           DATABASE_URL:      ${{ secrets.DATABASE_URL }}
           AGENTOPS_API_KEY:  ${{ secrets.AGENTOPS_API_KEY }}
@@ -208,4 +326,4 @@ jobs:
           IDEATE_POC_HOME:   /tmp/pocs
           IDEATE_GITHUB_ORG: binosusai
           GH_TOKEN:          ${{ secrets.GH_PAT }}
-        run: idea poc ${{ inputs.idea_id }} --force
+        run: idea poc ${{ needs.plan.outputs.idea_id }} --force

@@ -45,3 +45,65 @@ jobs:
           IDEATE_MODEL:      gpt-4.1-nano
         run: idea daily
         working-directory: .
+
+      - name: Build status dashboard
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python - <<'PY'
+          import os
+          import psycopg2
+
+          conn = psycopg2.connect(os.environ["DATABASE_URL"])
+          try:
+            with conn.cursor() as cur:
+              cur.execute(
+                """
+                SELECT status, COUNT(*)
+                FROM ideas
+                GROUP BY status
+                ORDER BY COUNT(*) DESC, status ASC
+                """
+              )
+              status_rows = cur.fetchall()
+              cur.execute(
+                """
+                SELECT id, title, status, score
+                FROM ideas
+                ORDER BY
+                  CASE category WHEN 'money' THEN 0 ELSE 1 END,
+                  score DESC,
+                  updated_at DESC
+                LIMIT 12
+                """
+              )
+              ideas = cur.fetchall()
+          finally:
+            conn.close()
+
+          lines = [
+            "# Ideate Status Dashboard",
+            "",
+            "## Status Counts",
+          ]
+          if not status_rows:
+            lines.append("- No ideas found")
+          else:
+            lines.extend(f"- {status}: {count}" for status, count in status_rows)
+          lines += ["", "## Top Ideas", "| ID | Title | Status | Score |", "|---|---|---|---|"]
+          for idea_id, title, status, score in ideas:
+            safe_title = str(title).replace("|", "\\|")
+            lines.append(f"| {idea_id} | {safe_title} | {status} | {float(score):.1f} |")
+          if not ideas:
+            lines.append("| - | No ideas | - | - |")
+
+          with open("/tmp/ideate-status-dashboard.md", "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+          PY
+          cat /tmp/ideate-status-dashboard.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload status dashboard
+        uses: actions/upload-artifact@v4
+        with:
+          name: ideate-status-dashboard
+          path: /tmp/ideate-status-dashboard.md
