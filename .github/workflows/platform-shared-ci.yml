@@ -1,0 +1,21 @@
+name: Platform Shared CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  python-ci:
+    uses: binosusai/platform/.github/workflows/python-poc-ci.yml@main
+    with:
+      backend_path: src/ideate/cli.py
+    secrets: inherit
+
+  terraform-ci:
+    if: ${{ hashFiles('infra/terraform/*.tf') != '' }}
+    uses: binosusai/platform/.github/workflows/terraform-plan.yml@main
+    with:
+      terraform_path: infra/terraform
+    secrets: inherit
