@@ -5,7 +5,20 @@ from pathlib import Path
 from typing import Iterable
 
 from .models import CATEGORIES, STATUSES, Idea
-from .text import slugify
+from .text import ranchi_codename
+
+
+MAX_IDEA_SLUG_LEN = 12
+
+
+def _alpha_suffix(index: int) -> str:
+    letters = "abcdefghijklmnopqrstuvwxyz"
+    token = ""
+    n = max(1, index)
+    while n > 0:
+        n, rem = divmod(n - 1, 26)
+        token = letters[rem] + token
+    return token
 
 
 SCHEMA = """
@@ -68,7 +81,7 @@ class Store:
         if category not in CATEGORIES:
             raise ValueError(f"category must be one of: {', '.join(sorted(CATEGORIES))}")
 
-        base_slug = slugify(title)
+        base_slug = ranchi_codename(title, max_len=MAX_IDEA_SLUG_LEN)
         with self.connect() as conn:
             slug = self._unique_slug(conn, base_slug)
             score = initial_score(title, category, why)
@@ -152,11 +165,13 @@ class Store:
             )
 
     def _unique_slug(self, conn: sqlite3.Connection, base_slug: str) -> str:
-        slug = base_slug or "idea"
+        slug = (base_slug or "ranchi")[:MAX_IDEA_SLUG_LEN]
         candidate = slug
-        suffix = 2
+        suffix = 1
         while conn.execute("SELECT 1 FROM ideas WHERE slug = ?", (candidate,)).fetchone():
-            candidate = f"{slug}-{suffix}"
+            tag = _alpha_suffix(suffix)
+            head = slug[: max(1, MAX_IDEA_SLUG_LEN - len(tag))]
+            candidate = f"{head}{tag}"
             suffix += 1
         return candidate
 
@@ -264,7 +279,7 @@ class PgStore:
     def add_idea(self, title: str, category: str, why: str) -> Idea:
         if category not in CATEGORIES:
             raise ValueError(f"category must be one of: {', '.join(sorted(CATEGORIES))}")
-        base_slug = slugify(title)
+        base_slug = ranchi_codename(title, max_len=MAX_IDEA_SLUG_LEN)
         score = initial_score(title, category, why)
         conn = self._connect()
         try:
@@ -386,12 +401,14 @@ class PgStore:
             conn.close()
 
     def _unique_slug(self, cur, base_slug: str) -> str:
-        slug = base_slug or "idea"
+        slug = (base_slug or "ranchi")[:MAX_IDEA_SLUG_LEN]
         candidate = slug
-        suffix = 2
+        suffix = 1
         cur.execute("SELECT 1 FROM ideas WHERE slug = %s", (candidate,))
         while cur.fetchone():
-            candidate = f"{slug}-{suffix}"
+            tag = _alpha_suffix(suffix)
+            head = slug[: max(1, MAX_IDEA_SLUG_LEN - len(tag))]
+            candidate = f"{head}{tag}"
             suffix += 1
             cur.execute("SELECT 1 FROM ideas WHERE slug = %s", (candidate,))
         return candidate

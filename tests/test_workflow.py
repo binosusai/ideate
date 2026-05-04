@@ -9,7 +9,8 @@ def run(root: Path, *args: str) -> int:
     return main(["--root", str(root), *args])
 
 
-def test_full_idea_workflow_creates_openspec_and_poc(tmp_path: Path) -> None:
+def test_full_idea_workflow_creates_openspec_and_poc(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("IDEATE_SKIP_GITHUB_REPO_CREATE", "1")
     assert run(tmp_path, "init") == 0
     assert run(tmp_path, "capture", "Dollar idea agent", "--category", "money", "--why", "sell workflow automation") == 0
     assert run(tmp_path, "research", "1") == 0
@@ -19,11 +20,16 @@ def test_full_idea_workflow_creates_openspec_and_poc(tmp_path: Path) -> None:
     assert run(tmp_path, "poc", "1") == 0
     assert run(tmp_path, "handoff", "1") == 0
 
-    idea = tmp_path / "ideas" / "dollar-idea-agent"
+    idea_folders = [p for p in (tmp_path / "ideas").iterdir() if p.is_dir()]
+    assert len(idea_folders) == 1
+    idea = idea_folders[0]
+    idea_slug = idea.name
+    assert "-" not in idea_slug
+    assert len(idea_slug) <= 12
     assert (idea / "README.md").exists()
-    assert (idea / "openspec" / "changes" / "dollar-idea-agent" / "proposal.md").exists()
-    assert (idea / "openspec" / "changes" / "dollar-idea-agent" / "design.md").exists()
-    assert (idea / "openspec" / "changes" / "dollar-idea-agent" / "tasks.md").exists()
+    assert (idea / "openspec" / "changes" / idea_slug / "proposal.md").exists()
+    assert (idea / "openspec" / "changes" / idea_slug / "design.md").exists()
+    assert (idea / "openspec" / "changes" / idea_slug / "tasks.md").exists()
     assert (idea / "crew_transcripts.md").exists()
     assert (idea / "poc_location.md").exists()
     assert not (idea / "draft_project").exists()

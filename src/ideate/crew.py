@@ -142,21 +142,21 @@ def run_research_crew(
         CrewMember(
             "Market Researcher",
             "research",
-            "Find who might pay, what they use today, and why now.",
+            "Identify the narrowest buyer segment, current alternatives, willingness-to-pay signals, switching friction, and the best entry wedge.",
             market_researcher,
             temperature=0.25,
         ),
         CrewMember(
             "User Researcher",
             "research",
-            "Describe the daily pain and the first user workflow.",
+            "Map the user trigger, current workaround, sharpest pain point, and the minimum first-run workflow that feels useful quickly.",
             user_researcher,
             temperature=0.45,
         ),
         CrewMember(
             "Technical Scout",
             "research",
-            "Identify local-first POC feasibility and likely blockers.",
+            "Assess whether a credible MVP can be built quickly, what must be mocked, and which dependencies or security constraints will slow delivery.",
             technical_scout,
             temperature=0.2,
         ),
@@ -482,6 +482,8 @@ def _resolve_temperature(stage: str, member: CrewMember) -> float:
 
 
 def _style_hint(member: CrewMember) -> str:
+    if member.role == "research":
+        return "Return concrete findings, risks, and one recommendation. Avoid generic market or product filler."
     if member.name == "Advocate":
         return "Be persuasive, specific, and outcome-focused."
     if member.name == "Skeptic":
@@ -514,6 +516,9 @@ def _member_prompt(
 
     if stage == "research":
         context_lines.append(f"research_focus: {_research_focus(member, idea)}")
+        context_lines.append(
+            "research_output_format: Provide exactly 3 findings, 2 risks, and 1 recommendation using concise bullets."
+        )
 
     teammate_text = ""
     if prior_outputs:
