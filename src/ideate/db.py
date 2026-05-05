@@ -509,10 +509,22 @@ class PgStore:
         try:
             with conn:
                 cur = conn.cursor()
-                cur.execute(
-                    "UPDATE ideas SET hardened = %s, updated_at = NOW() WHERE id = %s",
-                    (bool(hardened), idea_id),
-                )
+                try:
+                    cur.execute(
+                        "UPDATE ideas SET hardened = %s, updated_at = NOW() WHERE id = %s",
+                        (bool(hardened), idea_id),
+                    )
+                except Exception as exc:
+                    # Defensive fallback for environments where migration has not run yet.
+                    if "column \"hardened\"" not in str(exc):
+                        raise
+                    cur.execute(
+                        "ALTER TABLE ideas ADD COLUMN IF NOT EXISTS hardened BOOLEAN NOT NULL DEFAULT FALSE"
+                    )
+                    cur.execute(
+                        "UPDATE ideas SET hardened = %s, updated_at = NOW() WHERE id = %s",
+                        (bool(hardened), idea_id),
+                    )
         finally:
             conn.close()
 

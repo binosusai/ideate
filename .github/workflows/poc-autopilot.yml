@@ -88,6 +88,7 @@ jobs:
 
           database_url = os.environ.get("DATABASE_URL", "").strip()
           store = PgStore(database_url) if database_url else Store(root / ".ideate" / "ideate.sqlite3")
+          store.init()
 
           target_score = int((os.environ.get("INPUT_TARGET_SCORE") or "").strip() or "85")
           max_iterations = int((os.environ.get("INPUT_MAX_ITERATIONS") or "").strip() or "2")
