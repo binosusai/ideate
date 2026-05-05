@@ -903,23 +903,32 @@ def poc_quality_rubric(idea: Idea) -> str:
         f"POC Quality Rubric: {idea.title}",
         """
         ## Scoring Model
-        Total score: 100 points. Each section is deterministic and file-evidence based.
+        Total score: 100 points. Each section is deterministic and evidence based.
+
+        Section score combines:
+        - Structure checks (required files exist)
+        - Quality signals (required implementation/documentation signals are present in file content)
 
         ## Sections
         1. Core Runtime (20)
         - Backend runtime entrypoint exists (`backend/app.py`)
+        - Backend includes route/handler behavior and startup entrypoint
 
         2. Product Surface (20)
         - Frontend essentials exist (`frontend/index.html`, `frontend/app.js`, `frontend/styles.css`)
+        - Frontend includes semantic app shell, interactive behavior, and responsive styling signals
 
         3. Delivery Foundation (20)
         - Infra and CI exist (`infra/terraform/main.tf`, `.github/workflows/poc-ci.yml`)
+        - Infra and CI include provider/resource/test/deploy signals
 
         4. Engineering Documentation (20)
         - Setup and architecture docs exist (`docs/local_setup.md`, `docs/deployment.md`, `docs/architecture.md`)
+        - Docs include concrete run/deploy/architecture signal content
 
         5. Handoff Readiness (20)
         - Idea-side readiness artifacts exist (`acceptance_tests.md`, `poc_report.md`, `handoff.md`)
+        - Handoff artifacts include explicit acceptance criteria, constraints, and next-step context
 
         ## Grade Bands
         - 90-100: Ready for focused engineering iteration.
@@ -928,6 +937,18 @@ def poc_quality_rubric(idea: Idea) -> str:
         - 0-49: Incomplete draft, not ready for handoff.
         """,
     )
+
+
+def _read_text(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return ""
+
+
+def _has_any(content: str, tokens: tuple[str, ...]) -> bool:
+    lower = content.lower()
+    return any(token in lower for token in tokens)
 
 
 def score_poc_quality(idea_path: Path, project: Path) -> dict[str, object]:
@@ -954,6 +975,84 @@ def score_poc_quality(idea_path: Path, project: Path) -> dict[str, object]:
         ],
     }
 
+    quality_signals = {
+        "core_runtime": [
+            (
+                project / "backend" / "app.py",
+                "Backend should define at least one route/handler",
+                ("@app.route", "def ", "flask", "fastapi", "app.get", "app.post"),
+            ),
+            (
+                project / "backend" / "app.py",
+                "Backend should include app startup/runner logic",
+                ("if __name__", "uvicorn", "app.run", "gunicorn"),
+            ),
+        ],
+        "product_surface": [
+            (
+                project / "frontend" / "index.html",
+                "Frontend should include a meaningful app container",
+                ("<main", "id=\"app\"", "data-app", "<section"),
+            ),
+            (
+                project / "frontend" / "app.js",
+                "Frontend should include interaction/event wiring",
+                ("addeventlistener", "fetch(", "async function", "document.queryselector"),
+            ),
+            (
+                project / "frontend" / "styles.css",
+                "Styles should include responsive/layout signals",
+                ("@media", "display:", "grid", "flex"),
+            ),
+        ],
+        "delivery_foundation": [
+            (
+                project / "infra" / "terraform" / "main.tf",
+                "Terraform should include provider/resource/module definitions",
+                ("provider", "resource", "module", "terraform"),
+            ),
+            (
+                project / ".github" / "workflows" / "poc-ci.yml",
+                "CI workflow should include test/validation execution",
+                ("pytest", "test", "lint", "validate", "workflow_dispatch"),
+            ),
+        ],
+        "engineering_documentation": [
+            (
+                project / "docs" / "local_setup.md",
+                "Local setup doc should include concrete run/install commands",
+                ("pip install", "npm install", "idea poc", "python", "run"),
+            ),
+            (
+                project / "docs" / "deployment.md",
+                "Deployment doc should include target platform and steps",
+                ("vercel", "aws", "terraform", "deploy", "environment"),
+            ),
+            (
+                project / "docs" / "architecture.md",
+                "Architecture doc should describe components/data flow",
+                ("architecture", "component", "api", "database", "flow"),
+            ),
+        ],
+        "handoff_readiness": [
+            (
+                idea_path / "acceptance_tests.md",
+                "Acceptance tests should contain explicit acceptance criteria",
+                ("acceptance", "scenario", "given", "when", "then"),
+            ),
+            (
+                idea_path / "poc_report.md",
+                "POC report should capture feasibility/findings",
+                ("feasible", "risk", "finding", "next step", "recommend"),
+            ),
+            (
+                idea_path / "handoff.md",
+                "Handoff should define scope/next actions/constraints",
+                ("next", "scope", "constraint", "deliverable", "owner"),
+            ),
+        ],
+    }
+
     section_labels = {
         "core_runtime": "Core Runtime",
         "product_surface": "Product Surface",
@@ -966,8 +1065,20 @@ def score_poc_quality(idea_path: Path, project: Path) -> dict[str, object]:
     total = 0
     for key, paths in checks.items():
         passed = sum(1 for candidate in paths if candidate.exists())
-        ratio = passed / len(paths)
-        score = int(round(20 * ratio))
+        structure_ratio = passed / len(paths)
+
+        signals = quality_signals[key]
+        quality_passed = 0
+        deficiencies: list[str] = []
+        for signal_path, message, tokens in signals:
+            content = _read_text(signal_path)
+            if content and _has_any(content, tokens):
+                quality_passed += 1
+            else:
+                deficiencies.append(message)
+
+        quality_ratio = quality_passed / len(signals) if signals else 1.0
+        score = int(round((12 * structure_ratio) + (8 * quality_ratio)))
         missing = [str(candidate) for candidate in paths if not candidate.exists()]
         total += score
         section_scores.append(
@@ -976,6 +1087,7 @@ def score_poc_quality(idea_path: Path, project: Path) -> dict[str, object]:
                 "label": section_labels[key],
                 "score": score,
                 "missing": missing,
+                "deficiencies": deficiencies,
             }
         )
 
@@ -998,11 +1110,16 @@ def poc_quality_score_report(idea: Idea, score: dict[str, object], project: Path
         label = section["label"]
         points = section["score"]
         missing = section["missing"]
+        deficiencies = section.get("deficiencies", [])
         lines.append(f"- **{label}**: {points}/20")
         if missing:
             lines.append("  Missing:")
             for item in missing:
                 lines.append(f"  - `{item}`")
+        if deficiencies:
+            lines.append("  Quality gaps:")
+            for item in deficiencies:
+                lines.append(f"  - {item}")
 
     return md(
         f"POC Quality Score: {idea.title}",
@@ -1028,10 +1145,13 @@ def poc_improvement_loop(idea: Idea, score: dict[str, object]) -> str:
     actions: list[str] = []
     for section in weak_sections:
         label = str(section["label"])
-        missing = section["missing"]
+        missing = section.get("missing", [])
+        deficiencies = section.get("deficiencies", [])
         if missing:
             actions.append(f"Complete {label} by adding the missing files and rerun `idea poc {idea.id}`.")
-        else:
+        if deficiencies:
+            actions.append(f"Improve {label} quality signals: {', '.join(deficiencies[:2])}.")
+        if not missing and not deficiencies:
             actions.append(f"Improve {label} quality and rerun `idea poc {idea.id}`.")
 
     if not actions:
