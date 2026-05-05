@@ -1,11 +1,4 @@
 {
   "cleanUrls": true,
-  "trailingSlash": false,
-  "rewrites": [
-    { "source": "/api/issues", "destination": "/api/issues.js" },
-    { "source": "/api/auth/status", "destination": "/api/auth/status.js" },
-    { "source": "/api/auth/github/login", "destination": "/api/auth/github/login.js" },
-    { "source": "/api/auth/github/callback", "destination": "/api/auth/github/callback.js" },
-    { "source": "/api/auth/github/logout", "destination": "/api/auth/github/logout.js" }
-  ]
+  "trailingSlash": false
 }
