@@ -41,6 +41,8 @@ STAGE_MEMBERS: dict[str, list[str]] = {
         "OpenSpec Writer",
     ],
     "poc": ["POC Builder"],
+    "review": ["Reviewer"],
+    "handoff": ["Handoff Packager"],
 }
 
 
@@ -200,6 +202,13 @@ def main(argv: list[str] | None = None) -> int:
             idea = store.add_idea(args.title, args.category, args.why or "")
             store.log_run("capture", f"Captured idea {idea.id}: {idea.title}", idea.id)
             print(format_idea(idea))
+            # Auto-create board issues for all stages so they appear as ToDo immediately.
+            for stage, members in STAGE_MEMBERS.items():
+                sync_agent_tasks(
+                    idea,
+                    stage,
+                    [AgentTaskUpdate(name, "todo") for name in members],
+                )
             return _done(0)
 
         if args.command == "list":
@@ -378,6 +387,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.decision == "approve":
                 store.set_review_state(idea.id, "approved", tinkered=True)
                 store.add_decision(idea.id, "poc-approved", args.feedback or "POC approved by user.")
+                outcome = args.feedback or "POC approved by user."
                 print(f"POC approved for idea {idea.id}: {idea.title}")
             else:
                 note = args.feedback or "POC needs another iteration."
@@ -388,7 +398,13 @@ def main(argv: list[str] | None = None) -> int:
                     tinkered=False,
                 )
                 store.add_decision(idea.id, "poc-revise", note)
+                outcome = note
                 print(f"POC marked for revision for idea {idea.id}: {idea.title}")
+            sync_agent_tasks(
+                idea,
+                "review",
+                [AgentTaskUpdate("Reviewer", "done", outcome)],
+            )
             refresh_readme(root, store.get_idea(idea.id))
             return _done(0)
 
@@ -396,6 +412,11 @@ def main(argv: list[str] | None = None) -> int:
             if idea.status not in {"approved", "poc", "handoff"} and not args.force:
                 print("POC requires approved status. Use --force to override.", file=sys.stderr)
                 return _done(2, success=False)
+            sync_agent_tasks(
+                idea,
+                "poc",
+                [AgentTaskUpdate("POC Builder", "in_progress")],
+            )
             feasible = write_poc(root, idea, force_build=args.force)
             store.set_status(idea.id, "poc")
             store.set_review_state(
@@ -404,6 +425,17 @@ def main(argv: list[str] | None = None) -> int:
                 review_feedback="",
                 tinkered=False,
                 increment_iteration=True,
+            )
+            sync_agent_tasks(
+                idea,
+                "poc",
+                [AgentTaskUpdate("POC Builder", "done", f"POC {'created' if feasible else 'skipped'}")],
+            )
+            # Mark review as in_progress to signal it's awaiting human review.
+            sync_agent_tasks(
+                idea,
+                "review",
+                [AgentTaskUpdate("Reviewer", "in_progress")],
             )
             refresh_readme(root, store.get_idea(idea.id))
             print(f"POC {'created' if feasible else 'skipped'} for idea {idea.id}")
@@ -456,6 +488,11 @@ def main(argv: list[str] | None = None) -> int:
             path = write_handoff(root, idea)
             store.set_status(idea.id, "handoff")
             store.add_decision(idea.id, "handoff-ready", "Packaged for engineering crew.")
+            sync_agent_tasks(
+                idea,
+                "handoff",
+                [AgentTaskUpdate("Handoff Packager", "done", f"Handoff packaged at {path}")],
+            )
             refresh_readme(root, store.get_idea(idea.id))
             print(f"Handoff ready at {path}")
             return _done(0)
