@@ -1,4 +1,4 @@
-name: POC Improve (Manual Feedback Loop)
+name: POC Improve
 
 # Triggered manually from the GitHub Actions UI.
 # Accepts an idea_id and a plain-English feedback string.
@@ -84,7 +84,6 @@ jobs:
           AGENTOPS_API_KEY: ${{ secrets.AGENTOPS_API_KEY }}
           IDEATE_SKIP_GITHUB_REPO_CREATE: "1"
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           IDEATE_EMAIL_FROM: ${{ secrets.IDEATE_EMAIL_FROM }}
@@ -128,9 +127,9 @@ jobs:
           git config user.email "ideate-bot@users.noreply.github.com"
           git add ideas/ pocs/ || true
           if ! git diff --cached --quiet; then
-            git commit -m "chore: POC re-iteration for idea ${{ github.event.inputs.idea_id }} [skip ci]
-
-Feedback: ${{ github.event.inputs.feedback }}"
+            git commit \
+              -m "chore: POC re-iteration for idea ${{ github.event.inputs.idea_id }} [skip ci]" \
+              -m "Feedback: ${{ github.event.inputs.feedback }}"
             git push
           else
             echo "No artifact changes to commit."
