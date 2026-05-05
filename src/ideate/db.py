@@ -11,6 +11,26 @@ from .text import ranchi_codename
 MAX_IDEA_SLUG_LEN = 12
 
 
+TERMINAL_STATUSES = {"killed", "completed"}
+
+
+def _validate_status_transition(current_status: str, next_status: str) -> None:
+    if current_status == next_status:
+        return
+
+    # Prevent reviving terminal states unless explicitly re-captured as a new idea.
+    if current_status in TERMINAL_STATUSES:
+        raise ValueError(
+            f"invalid status transition: {current_status} -> {next_status}"
+        )
+
+    # Completion should happen only after handoff or an explicit in-progress execution state.
+    if next_status == "completed" and current_status not in {"handoff", "in_progress"}:
+        raise ValueError(
+            f"invalid status transition: {current_status} -> {next_status}"
+        )
+
+
 def _alpha_suffix(index: int) -> str:
     letters = "abcdefghijklmnopqrstuvwxyz"
     token = ""
@@ -153,6 +173,14 @@ class Store:
         if status not in STATUSES:
             raise ValueError(f"unknown status: {status}")
         with self.connect() as conn:
+            row = conn.execute(
+                "SELECT status FROM ideas WHERE id = ?",
+                (idea_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"idea {idea_id} was not found")
+            current_status = str(row["status"])
+            _validate_status_transition(current_status, status)
             conn.execute(
                 "UPDATE ideas SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
                 (status, idea_id),
@@ -448,6 +476,12 @@ class PgStore:
         try:
             with conn:
                 cur = conn.cursor()
+                cur.execute("SELECT status FROM ideas WHERE id = %s", (idea_id,))
+                row = cur.fetchone()
+                if row is None:
+                    raise KeyError(f"idea {idea_id} was not found")
+                current_status = str(row[0])
+                _validate_status_transition(current_status, status)
                 cur.execute(
                     "UPDATE ideas SET status = %s, updated_at = NOW() WHERE id = %s",
                     (status, idea_id),

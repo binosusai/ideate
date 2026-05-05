@@ -13,7 +13,10 @@ from .text import bullet_list, md
 
 
 def _agentops_enabled() -> bool:
-    return bool(os.environ.get("AGENTOPS_API_KEY", "").strip())
+    return (
+        bool(os.environ.get("AGENTOPS_API_KEY", "").strip())
+        and os.environ.get("IDEATE_AGENTOPS_ACTIVE") == "1"
+    )
 
 
 def _agentops_record_action(action_type: str, params: dict[str, str], returns: str) -> None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
+import pytest
 
 from ideate.cli import build_iteration_context, is_eligible_for_auto_pick, main
 from ideate.db import Store
@@ -34,6 +35,9 @@ def test_full_idea_workflow_creates_openspec_and_poc(tmp_path: Path, monkeypatch
     assert (idea / "openspec" / "changes" / idea_slug / "tasks.md").exists()
     assert (idea / "crew_transcripts.md").exists()
     assert (idea / "poc_location.md").exists()
+    assert (idea / "poc_quality_rubric.md").exists()
+    assert (idea / "poc_quality_score.md").exists()
+    assert (idea / "poc_improvement_loop.md").exists()
     assert not (idea / "draft_project").exists()
     assert (idea / "handoff.md").exists()
 
@@ -71,6 +75,12 @@ def test_full_idea_workflow_creates_openspec_and_poc(tmp_path: Path, monkeypatch
     assert "your-org/platform/.github/workflows/python-poc-ci.yml@main" in workflow
     assert "rules/security.md" in rules
     assert "hooks/pre-commit" in rules
+
+    quality_score = (idea / "poc_quality_score.md").read_text(encoding="utf-8")
+    improvement_loop = (idea / "poc_improvement_loop.md").read_text(encoding="utf-8")
+    assert "Deterministic Score" in quality_score
+    assert "Total:" in quality_score
+    assert "## Recommended Actions" in improvement_loop
 
     tasks = (idea / "openspec" / "changes" / idea_slug / "tasks.md").read_text(encoding="utf-8")
     assert "## Implementation Tasks" in tasks
@@ -197,3 +207,71 @@ def test_stage_commands_reuse_cached_artifacts_and_keep_openspec_context(tmp_pat
     assert "## Research Context" in proposal
     assert "## Debate Context" in proposal
     assert "## Implementation Plan" in spec
+
+
+def test_store_rejects_invalid_status_transition(tmp_path: Path) -> None:
+    assert run(tmp_path, "init") == 0
+    assert run(tmp_path, "capture", "Invalid transition test", "--category", "money") == 0
+
+    store = Store(tmp_path / ".ideate" / "ideate.sqlite3")
+    store.set_status(1, "killed")
+    with pytest.raises(ValueError, match="invalid status transition"):
+        store.set_status(1, "planned")
+
+
+def test_store_allows_expected_linear_status_transitions(tmp_path: Path) -> None:
+    assert run(tmp_path, "init") == 0
+    assert run(tmp_path, "capture", "Valid transition test", "--category", "money") == 0
+
+    store = Store(tmp_path / ".ideate" / "ideate.sqlite3")
+    for status in ["researched", "debated", "planned", "approved", "poc", "handoff", "completed"]:
+        store.set_status(1, status)
+
+    assert store.get_idea(1).status == "completed"
+
+
+def test_research_fails_in_strict_iteration_context_when_prior_artifacts_missing(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    assert run(tmp_path, "init") == 0
+    assert run(tmp_path, "capture", "Strict context test", "--category", "money") == 0
+
+    store = Store(tmp_path / ".ideate" / "ideate.sqlite3")
+    store.set_review_state(1, "revise", review_feedback="Need better prior iteration continuity")
+
+    monkeypatch.setenv("IDEATE_STRICT_ITERATION_CONTEXT", "1")
+    assert run(tmp_path, "research", "1") == 1
+
+
+def test_board_setup_fails_fast_when_token_missing(tmp_path: Path, monkeypatch) -> None:
+    assert run(tmp_path, "init") == 0
+    assert run(tmp_path, "capture", "Board setup preflight", "--category", "money") == 0
+
+    monkeypatch.setenv("IDEATE_GITHUB_TASK_BOARD", "1")
+    monkeypatch.setenv("IDEATE_TASKS_REPO", "owner/repo")
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+
+    assert run(tmp_path, "board-setup", "1") == 1
+
+
+def test_poc_quality_cycle_artifacts_exist_when_poc_is_skipped(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("IDEATE_SKIP_GITHUB_REPO_CREATE", "1")
+    assert run(tmp_path, "init") == 0
+    assert run(
+        tmp_path,
+        "capture",
+        "Paid API gateway",
+        "--category",
+        "money",
+        "--why",
+        "Needs paid api integration",
+    ) == 0
+    assert run(tmp_path, "approve", "1") == 0
+    assert run(tmp_path, "poc", "1") == 0
+
+    idea = next((tmp_path / "ideas").iterdir())
+    assert (idea / "poc_quality_rubric.md").exists()
+    assert (idea / "poc_quality_score.md").exists()
+    assert (idea / "poc_improvement_loop.md").exists()

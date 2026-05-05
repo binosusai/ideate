@@ -33,6 +33,22 @@ def _repo() -> str | None:
     return value
 
 
+def assert_board_sync_ready() -> None:
+    """Validate required board-sync configuration and GitHub connectivity."""
+    if not _enabled():
+        return
+    repo = _repo()
+    token = _token()
+    if not repo:
+        raise RuntimeError(
+            "Task board sync requires IDEATE_TASKS_REPO (or GITHUB_REPOSITORY) in owner/repo format."
+        )
+    if not token:
+        raise RuntimeError("Task board sync requires GH_TOKEN or GITHUB_TOKEN.")
+    owner, repo_name = repo.split("/", 1)
+    _api("GET", f"/repos/{owner}/{repo_name}", token)
+
+
 def _slug(value: str, max_len: int = 24) -> str:
     text = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
     return (text[:max_len].strip("-") or "task")
@@ -111,7 +127,13 @@ def _upsert_issue(
         _api("PATCH", f"/repos/{owner}/{repo}/issues/{number}", token, payload)
 
 
-def sync_agent_tasks(idea: Idea, stage: str, tasks: Iterable[AgentTaskUpdate]) -> None:
+def sync_agent_tasks(
+    idea: Idea,
+    stage: str,
+    tasks: Iterable[AgentTaskUpdate],
+    *,
+    fail_open: bool = True,
+) -> None:
     if not _enabled():
         return
     repo = _repo()
@@ -172,7 +194,13 @@ def sync_agent_tasks(idea: Idea, stage: str, tasks: Iterable[AgentTaskUpdate]) -
             state = "closed" if task.status == "done" else "open"
             _upsert_issue(owner, repo_name, token, task_key, title, body, labels, state)
     except error.HTTPError as exc:
-        # Fail open: board visibility should not block pipeline delivery.
-        print(f"[ideate] task board sync skipped due to GitHub API error {exc.code}: {exc.reason}")
+        if fail_open:
+            # Fail open: board visibility should not block pipeline delivery.
+            print(f"[ideate] task board sync skipped due to GitHub API error {exc.code}: {exc.reason}")
+            return
+        raise RuntimeError(f"task board sync failed with GitHub API error {exc.code}: {exc.reason}")
     except (error.URLError, TimeoutError) as exc:
-        print(f"[ideate] task board sync skipped due to network error: {exc}")
+        if fail_open:
+            print(f"[ideate] task board sync skipped due to network error: {exc}")
+            return
+        raise RuntimeError(f"task board sync network error: {exc}")

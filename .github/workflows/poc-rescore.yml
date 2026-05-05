@@ -1,0 +1,107 @@
+name: POC Re-score
+
+# Runs quality scoring against the CURRENT state of the POC on disk.
+# No planning crew, no full regeneration — just a fast file-existence score.
+# Use this after you (or poc-improve) have made targeted changes to a POC.
+#
+# Triggers:
+#   - Automatically: any push that touches pocs/** or ideas/**/poc_*
+#   - Manually: supply idea_id to score a specific idea
+#
+# Required GitHub Actions secrets:
+#   DATABASE_URL        — Neon Postgres (to look up the idea by id)
+#   SMTP_HOST / SMTP_USER / SMTP_PASS / IDEATE_EMAIL_FROM / IDEATE_EMAIL_TO
+#       — optional; if absent, score is written to step summary only
+
+on:
+  workflow_dispatch:
+    inputs:
+      idea_id:
+        description: "Idea ID (integer) to re-score"
+        required: true
+        type: string
+  push:
+    paths:
+      - "pocs/**"
+      - "ideas/**/poc_quality_score.md"
+      - "ideas/**/poc_improvement_loop.md"
+
+jobs:
+  rescore:
+    name: Re-score POC quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -e .
+
+      - name: Resolve idea_id
+        id: resolve
+        run: |
+          if [[ -n "${{ github.event.inputs.idea_id }}" ]]; then
+            echo "idea_id=${{ github.event.inputs.idea_id }}" >> "$GITHUB_OUTPUT"
+          else
+            # On push, score all ideas that have a POC on disk.
+            # We emit a comma-separated list; the next step iterates.
+            IDS=$(python - <<'PYEOF'
+import os, sys
+sys.path.insert(0, "src")
+from ideate.db import PgStore, Store
+from pathlib import Path
+root = Path(".")
+store = PgStore(os.environ["DATABASE_URL"]) if os.environ.get("DATABASE_URL") else Store(root / ".ideate" / "ideate.sqlite3")
+ideas = store.list_ideas()
+ids = [str(i.id) for i in ideas if (root / "pocs").exists()]
+print(",".join(ids))
+PYEOF
+)
+            echo "idea_id=$IDS" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Run idea score for each idea_id
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          IDEATE_EMAIL_FROM: ${{ secrets.IDEATE_EMAIL_FROM }}
+          IDEATE_EMAIL_TO: ${{ secrets.IDEATE_EMAIL_TO }}
+          IDEATE_HOME: ${{ github.workspace }}
+          IDEATE_POC_HOME: ${{ github.workspace }}/pocs
+        run: |
+          IDS="${{ steps.resolve.outputs.idea_id }}"
+          for ID in $(echo "$IDS" | tr ',' ' '); do
+            echo "--- scoring idea $ID ---"
+            idea score "$ID" || true
+          done
+
+      - name: Write score to job summary
+        env:
+          IDEATE_HOME: ${{ github.workspace }}
+        run: |
+          {
+            echo "## POC Re-score Results"
+            echo ""
+            for SCORE_FILE in $(find ideas -name "poc_quality_score.md" 2>/dev/null); do
+              IDEA_DIR=$(dirname "$SCORE_FILE")
+              echo "### $(basename $IDEA_DIR)"
+              cat "$SCORE_FILE"
+              echo ""
+              LOOP_FILE="$IDEA_DIR/poc_improvement_loop.md"
+              if [ -f "$LOOP_FILE" ]; then
+                echo "#### Recommended Actions"
+                grep -A 100 "## Recommended Actions" "$LOOP_FILE" | head -20 || true
+              fi
+              echo "---"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"

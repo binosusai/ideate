@@ -9,7 +9,8 @@ from pathlib import Path
 
 from .agents import acceptance_tests, handoff_brief
 from .models import Idea
-from .text import md, slugify
+from .notify import send_quality_email
+from .text import bullet_list, md, slugify
 
 
 def idea_dir(root: Path, idea: Idea) -> Path:
@@ -202,6 +203,7 @@ def _init_poc_repo(project: Path, idea: Idea) -> None:
     if not is_existing_repo and remote_repo_exists:
         _attach_project_to_existing_remote(project, org, base_repo_name, idea)
         is_existing_repo = True
+    created_new_repo = not is_existing_repo
     try:
         if is_existing_repo:
             # Repo already exists: just stage everything and commit as a new iteration.
@@ -251,6 +253,8 @@ def _init_poc_repo(project: Path, idea: Idea) -> None:
                 capture_output=True,
             )
     except Exception as exc:  # pragma: no cover
+        if created_new_repo and (project / ".git").exists():
+            shutil.rmtree(project / ".git", ignore_errors=True)
         raise RuntimeError(f"POC git operation failed for {project.name}: {exc}") from exc
     if os.environ.get("IDEATE_SKIP_GITHUB_REPO_CREATE") == "1":
         print(f"[ideate] GitHub repo creation skipped for {org}/{base_repo_name}")
@@ -311,13 +315,17 @@ def _init_poc_repo(project: Path, idea: Idea) -> None:
             push_result = _push_with_auth_retry(project, org, base_repo_name)
             if push_result.returncode != 0:
                 message = push_result.stderr.strip() or push_result.stdout.strip() or "unknown error"
-                raise RuntimeError(f"Push failed for existing remote {org}/{base_repo_name}: {message}")
+                print(f"[ideate] warning: push failed for existing remote {org}/{base_repo_name}: {message}")
+                return
             print(f"[ideate] Pushed iteration to existing remote for {org}/{base_repo_name}")
         else:
             print(f"[ideate] No changes detected in existing remote repo {base_repo_name}; nothing to commit.")
         return
 
-    raise RuntimeError(f"GitHub repo creation failed for {org}/{base_repo_name}: {message}")
+    print(
+        f"[ideate] warning: GitHub repo creation failed for {org}/{base_repo_name}: {message}. "
+        "Local repo and generated POC are still available."
+    )
 
 
 def write_poc(root: Path, idea: Idea, force_build: bool = False) -> bool:
@@ -325,16 +333,116 @@ def write_poc(root: Path, idea: Idea, force_build: bool = False) -> bool:
     project = poc_dir(root, idea)
     feasible = is_poc_feasible(idea)
     context = build_project_context(path, idea)
+    write_text(path / "poc_quality_rubric.md", poc_quality_rubric(idea))
     write_text(path / "poc_report.md", poc_report_for(idea, feasible, project))
     write_text(path / "poc_location.md", poc_location_doc(idea, project))
     if not feasible and not force_build:
+        score = score_poc_quality(path, project)
+        score_doc = poc_quality_score_report(idea, score, project)
+        improvement_doc = poc_improvement_loop(idea, score)
+        write_text(path / "poc_quality_score.md", score_doc)
+        write_text(path / "poc_improvement_loop.md", improvement_doc)
+        send_quality_email(idea.title, score_doc, improvement_doc)
         return False
 
     write_common_poc_infra(poc_workspace(root), platform_workspace(root))
     write_draft_project(project, idea, platform_workspace(root), context)
     copy_openspec_into_poc(path, project)
     _init_poc_repo(project, idea)
+    score = score_poc_quality(path, project)
+    score_doc = poc_quality_score_report(idea, score, project)
+    improvement_doc = poc_improvement_loop(idea, score)
+    write_text(path / "poc_quality_score.md", score_doc)
+    write_text(path / "poc_improvement_loop.md", improvement_doc)
+    send_quality_email(idea.title, score_doc, improvement_doc)
     return True
+
+
+def write_poc_patch(root: Path, idea: Idea) -> dict[str, object]:
+    """Targeted patching of an existing POC on disk.
+
+    Reads the current quality score, identifies every missing file, and writes
+    only those files — leaving everything the crew or the user has already
+    produced intact.  Commits the changes to the POC git repo, re-scores, and
+    emails the updated report.
+
+    Returns the new score dict so the caller can print the delta.
+    """
+    path = ensure_idea_folder(root, idea)
+    project = poc_dir(root, idea)
+    platform = platform_workspace(root)
+    context = build_project_context(path, idea)
+
+    # Score before patching so we have a baseline in the commit message.
+    before = score_poc_quality(path, project)
+
+    # Map each scoreable file to its generator function.
+    # Generators are called lazily — only when the file is missing.
+    file_generators: dict[str, object] = {
+        str(project / "backend" / "app.py"):
+            lambda: backend_app(idea, context),
+        str(project / "frontend" / "index.html"):
+            lambda: frontend_index(idea, context),
+        str(project / "frontend" / "app.js"):
+            lambda: frontend_app_js(context),
+        str(project / "frontend" / "styles.css"):
+            lambda: frontend_styles(context),
+        str(project / "infra" / "terraform" / "main.tf"):
+            lambda: terraform_main(idea, platform),
+        str(project / ".github" / "workflows" / "poc-ci.yml"):
+            lambda: github_actions(platform),
+        str(project / "docs" / "local_setup.md"):
+            lambda: local_setup_doc(),
+        str(project / "docs" / "deployment.md"):
+            lambda: deployment_doc(platform),
+        str(project / "docs" / "architecture.md"):
+            lambda: architecture_doc(idea, context),
+        # handoff_readiness files live in idea_path, not the POC repo.
+        str(path / "acceptance_tests.md"):
+            lambda: __import__("ideate.agents", fromlist=["acceptance_tests"]).acceptance_tests(idea),
+        str(path / "poc_report.md"):
+            lambda: poc_report_for(idea, is_poc_feasible(idea), project),
+        str(path / "handoff.md"):
+            lambda: __import__("ideate.agents", fromlist=["handoff_brief"]).handoff_brief(idea),
+    }
+
+    patched: list[str] = []
+    for file_path_str, generator in file_generators.items():
+        target = Path(file_path_str)
+        if not target.exists():
+            write_text(target, generator())
+            patched.append(file_path_str)
+
+    if patched:
+        print(f"[ideate] Patched {len(patched)} missing file(s) in POC.")
+        # Commit the patches to the existing POC git repo.
+        if (project / ".git").exists():
+            try:
+                subprocess.run(["git", "add", "."], cwd=project, check=True, capture_output=True)
+                diff = subprocess.run(
+                    ["git", "diff", "--cached", "--quiet"], cwd=project, capture_output=True
+                )
+                if diff.returncode != 0:
+                    iteration = idea.iteration_count or 1
+                    msg = f"POC patch iteration {iteration}: filled {len(patched)} missing file(s)"
+                    subprocess.run(
+                        ["git", "commit", "-m", msg], cwd=project, check=True, capture_output=True
+                    )
+                    print(f"[ideate] Committed patch to POC repo at {project.name}")
+            except Exception as exc:  # pragma: no cover
+                print(f"[ideate] warning: git commit failed after patch: {exc}")
+    else:
+        print("[ideate] No missing files detected. POC is already complete according to the rubric.")
+
+    # Re-score against current disk state and notify.
+    after = score_poc_quality(path, project)
+    score_doc = poc_quality_score_report(idea, after, project)
+    improvement_doc = poc_improvement_loop(idea, after)
+    write_text(path / "poc_quality_score.md", score_doc)
+    write_text(path / "poc_improvement_loop.md", improvement_doc)
+    send_quality_email(idea.title, score_doc, improvement_doc)
+
+    return {"before": before, "after": after, "patched": patched}
 
 
 def _remote_repo_exists(org: str, repo_name: str) -> bool:
@@ -786,6 +894,171 @@ def poc_location_doc(idea: Idea, project: Path) -> str:
 
         Ideate keeps agent memory, research, debate, OpenSpec, and handoff files in `ideate/ideas/{idea.slug}/`.
         The runnable proof-of-concept source code lives outside the factory under the workspace-level `pocs/` folder.
+        """,
+    )
+
+
+def poc_quality_rubric(idea: Idea) -> str:
+    return md(
+        f"POC Quality Rubric: {idea.title}",
+        """
+        ## Scoring Model
+        Total score: 100 points. Each section is deterministic and file-evidence based.
+
+        ## Sections
+        1. Core Runtime (20)
+        - Backend runtime entrypoint exists (`backend/app.py`)
+
+        2. Product Surface (20)
+        - Frontend essentials exist (`frontend/index.html`, `frontend/app.js`, `frontend/styles.css`)
+
+        3. Delivery Foundation (20)
+        - Infra and CI exist (`infra/terraform/main.tf`, `.github/workflows/poc-ci.yml`)
+
+        4. Engineering Documentation (20)
+        - Setup and architecture docs exist (`docs/local_setup.md`, `docs/deployment.md`, `docs/architecture.md`)
+
+        5. Handoff Readiness (20)
+        - Idea-side readiness artifacts exist (`acceptance_tests.md`, `poc_report.md`, `handoff.md`)
+
+        ## Grade Bands
+        - 90-100: Ready for focused engineering iteration.
+        - 70-89: Usable POC, needs targeted hardening.
+        - 50-69: Early prototype, significant gaps remain.
+        - 0-49: Incomplete draft, not ready for handoff.
+        """,
+    )
+
+
+def score_poc_quality(idea_path: Path, project: Path) -> dict[str, object]:
+    checks = {
+        "core_runtime": [project / "backend" / "app.py"],
+        "product_surface": [
+            project / "frontend" / "index.html",
+            project / "frontend" / "app.js",
+            project / "frontend" / "styles.css",
+        ],
+        "delivery_foundation": [
+            project / "infra" / "terraform" / "main.tf",
+            project / ".github" / "workflows" / "poc-ci.yml",
+        ],
+        "engineering_documentation": [
+            project / "docs" / "local_setup.md",
+            project / "docs" / "deployment.md",
+            project / "docs" / "architecture.md",
+        ],
+        "handoff_readiness": [
+            idea_path / "acceptance_tests.md",
+            idea_path / "poc_report.md",
+            idea_path / "handoff.md",
+        ],
+    }
+
+    section_labels = {
+        "core_runtime": "Core Runtime",
+        "product_surface": "Product Surface",
+        "delivery_foundation": "Delivery Foundation",
+        "engineering_documentation": "Engineering Documentation",
+        "handoff_readiness": "Handoff Readiness",
+    }
+
+    section_scores: list[dict[str, object]] = []
+    total = 0
+    for key, paths in checks.items():
+        passed = sum(1 for candidate in paths if candidate.exists())
+        ratio = passed / len(paths)
+        score = int(round(20 * ratio))
+        missing = [str(candidate) for candidate in paths if not candidate.exists()]
+        total += score
+        section_scores.append(
+            {
+                "key": key,
+                "label": section_labels[key],
+                "score": score,
+                "missing": missing,
+            }
+        )
+
+    if total >= 90:
+        band = "Ready for focused engineering iteration"
+    elif total >= 70:
+        band = "Usable POC, needs targeted hardening"
+    elif total >= 50:
+        band = "Early prototype, significant gaps remain"
+    else:
+        band = "Incomplete draft, not ready for handoff"
+
+    return {"total": total, "band": band, "sections": section_scores}
+
+
+def poc_quality_score_report(idea: Idea, score: dict[str, object], project: Path) -> str:
+    lines: list[str] = []
+    sections = score.get("sections", [])
+    for section in sections:
+        label = section["label"]
+        points = section["score"]
+        missing = section["missing"]
+        lines.append(f"- **{label}**: {points}/20")
+        if missing:
+            lines.append("  Missing:")
+            for item in missing:
+                lines.append(f"  - `{item}`")
+
+    return md(
+        f"POC Quality Score: {idea.title}",
+        f"""
+        ## Target Project
+        `{project}`
+
+        ## Deterministic Score
+        **Total:** {score.get("total", 0)}/100
+
+        **Band:** {score.get("band", "Unknown")}
+
+        ## Section Breakdown
+        {os.linesep.join(lines) if lines else "No sections available."}
+        """,
+    )
+
+
+def poc_improvement_loop(idea: Idea, score: dict[str, object]) -> str:
+    sections = score.get("sections", [])
+    weak_sections = [section for section in sections if int(section["score"]) < 20]
+
+    actions: list[str] = []
+    for section in weak_sections:
+        label = str(section["label"])
+        missing = section["missing"]
+        if missing:
+            actions.append(f"Complete {label} by adding the missing files and rerun `idea poc {idea.id}`.")
+        else:
+            actions.append(f"Improve {label} quality and rerun `idea poc {idea.id}`.")
+
+    if not actions:
+        actions = [
+            "Run a focused polish pass on UX and reliability.",
+            "Re-run local verification and update handoff notes with any production risks.",
+        ]
+
+    loop_steps = [
+        "Evaluate the current score and weak sections.",
+        "Implement the top 1-3 actions below.",
+        "Regenerate POC artifacts by rerunning `idea poc <id>`.",
+        "Compare score deltas and continue until target band is met.",
+    ]
+
+    return md(
+        f"POC Improvement Loop: {idea.title}",
+        f"""
+        ## Current Snapshot
+        - Total Score: {score.get("total", 0)}/100
+        - Band: {score.get("band", "Unknown")}
+
+        ## Loop
+        {bullet_list(loop_steps)}
+
+        ## Recommended Actions
+        {bullet_list(actions)}
         """,
     )
 
@@ -1758,6 +2031,9 @@ def idea_readme(idea: Idea) -> str:
         - `acceptance_tests.md`
         - `poc_report.md`
         - `poc_location.md`
+        - `poc_quality_rubric.md`
+        - `poc_quality_score.md`
+        - `poc_improvement_loop.md`
         - `handoff.md`
         - `openspec/`
         """,

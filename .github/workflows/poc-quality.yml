@@ -1,0 +1,50 @@
+name: POC Quality Rubric
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "src/ideate/projects.py"
+      - "src/ideate/cli.py"
+      - "src/ideate/db.py"
+      - "tests/test_workflow.py"
+      - ".github/workflows/poc-quality.yml"
+  push:
+    branches: [main]
+    paths:
+      - "src/ideate/projects.py"
+      - "src/ideate/cli.py"
+      - "src/ideate/db.py"
+      - "tests/test_workflow.py"
+      - ".github/workflows/poc-quality.yml"
+
+jobs:
+  poc-quality:
+    name: POC quality tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -e .
+
+      - name: Run focused POC quality tests
+        env:
+          IDEATE_SKIP_GITHUB_REPO_CREATE: "1"
+        run: |
+          pytest -q tests/test_workflow.py -k "full_idea_workflow_creates_openspec_and_poc or poc_quality_cycle_artifacts_exist_when_poc_is_skipped"
+
+      - name: Upload pytest cache and temp artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: poc-quality-test-logs
+          path: |
+            .pytest_cache
+          if-no-files-found: ignore

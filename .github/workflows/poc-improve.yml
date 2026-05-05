@@ -1,0 +1,137 @@
+name: POC Improve (Manual Feedback Loop)
+
+# Triggered manually from the GitHub Actions UI.
+# Accepts an idea_id and a plain-English feedback string.
+# Wires the feedback into the planning crew as review context,
+# regenerates the POC, and emails the updated quality report.
+#
+# Required GitHub Actions secrets:
+#   DATABASE_URL        — Neon/Postgres connection string (idea state)
+#   OPENAI_API_KEY      — for the planning and POC crews
+#   SMTP_HOST           — outbound mail relay host
+#   SMTP_USER           — SMTP login
+#   SMTP_PASS           — SMTP password
+#   IDEATE_EMAIL_FROM   — sender address
+#   IDEATE_EMAIL_TO     — recipient address (you)
+#
+# Optional secrets:
+#   AGENTOPS_API_KEY    — observability tracing (skipped if absent)
+
+on:
+  workflow_dispatch:
+    inputs:
+      idea_id:
+        description: "Idea ID (integer) to improve"
+        required: true
+        type: string
+      feedback:
+        description: "What should the engineering crew fix or improve in the POC?"
+        required: true
+        type: string
+
+jobs:
+  poc-improve:
+    name: Re-iterate POC with feedback
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Need write access to push regenerated artifacts back
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -e .
+
+      - name: Capture baseline score (before re-iteration)
+        id: before
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          IDEATE_HOME: ${{ github.workspace }}
+          IDEATE_POC_HOME: ${{ github.workspace }}/pocs
+        run: |
+          # idea score exits 2 if no POC exists yet — that is fine, score stays empty
+          SCORE=$(idea score "${{ github.event.inputs.idea_id }}" 2>/dev/null || echo "no baseline")
+          echo "score=$SCORE" >> "$GITHUB_OUTPUT"
+
+      - name: Record revision feedback in DB
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          IDEATE_HOME: ${{ github.workspace }}
+        run: |
+          idea review "${{ github.event.inputs.idea_id }}" \
+            --decision revise \
+            --feedback "${{ github.event.inputs.feedback }}"
+
+      - name: Re-run planning crew with feedback in context
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          AGENTOPS_API_KEY: ${{ secrets.AGENTOPS_API_KEY }}
+          IDEATE_HOME: ${{ github.workspace }}
+        run: |
+          idea plan "${{ github.event.inputs.idea_id }}" --force-refresh
+
+      - name: Patch missing POC files (preserves existing crew work)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          AGENTOPS_API_KEY: ${{ secrets.AGENTOPS_API_KEY }}
+          IDEATE_SKIP_GITHUB_REPO_CREATE: "1"
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          IDEATE_EMAIL_FROM: ${{ secrets.IDEATE_EMAIL_FROM }}
+          IDEATE_EMAIL_TO: ${{ secrets.IDEATE_EMAIL_TO }}
+          IDEATE_HOME: ${{ github.workspace }}
+          IDEATE_POC_HOME: ${{ github.workspace }}/pocs
+        run: |
+          # poc-patch writes only the files that are still missing from the rubric.
+          # Existing POC files the crew or you have already edited are untouched.
+          idea poc-patch "${{ github.event.inputs.idea_id }}"
+
+      - name: Write job summary with quality report
+        env:
+          IDEATE_HOME: ${{ github.workspace }}
+        run: |
+          IDEA_ID="${{ github.event.inputs.idea_id }}"
+          SCORE_FILE=$(find "$IDEATE_HOME/ideas" -name "poc_quality_score.md" | head -1)
+          LOOP_FILE=$(find "$IDEATE_HOME/ideas" -name "poc_improvement_loop.md" | head -1)
+          {
+            echo "## POC Quality Report — Idea $IDEA_ID"
+            echo ""
+            echo "**Feedback applied:** ${{ github.event.inputs.feedback }}"
+            echo ""
+            echo "| | Score |"
+            echo "|---|---|"
+            echo "| Before | ${{ steps.before.outputs.score }} |"
+            echo "| After  | $(idea score $IDEA_ID 2>/dev/null || echo 'see below') |"
+            echo ""
+            if [ -f "$SCORE_FILE" ]; then
+              cat "$SCORE_FILE"
+            fi
+            echo ""
+            if [ -f "$LOOP_FILE" ]; then
+              cat "$LOOP_FILE"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Commit regenerated artifacts
+        run: |
+          git config user.name "ideate-bot"
+          git config user.email "ideate-bot@users.noreply.github.com"
+          git add ideas/ pocs/ || true
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: POC re-iteration for idea ${{ github.event.inputs.idea_id }} [skip ci]
+
+Feedback: ${{ github.event.inputs.feedback }}"
+            git push
+          else
+            echo "No artifact changes to commit."
+          fi

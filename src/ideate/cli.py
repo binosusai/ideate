@@ -7,11 +7,23 @@ import sys
 from pathlib import Path
 
 from .agents import debate_brief, research_brief
-from .board_sync import AgentTaskUpdate, sync_agent_tasks
+from .board_sync import AgentTaskUpdate, assert_board_sync_ready, sync_agent_tasks
 from .crew import run_debate_crew, run_planning_crew, run_research_crew
 from .db import PgStore, Store
 from .models import CATEGORIES
-from .projects import refresh_readme, write_handoff, write_openspec, write_planning_files, write_poc
+from .projects import (
+    poc_dir,
+    poc_improvement_loop,
+    poc_quality_score_report,
+    refresh_readme,
+    score_poc_quality,
+    write_handoff,
+    write_openspec,
+    write_planning_files,
+    write_poc,
+    write_poc_patch,
+    write_text,
+)
 
 
 STAGE_MEMBERS: dict[str, list[str]] = {
@@ -42,8 +54,13 @@ def _mark_stage_reused(idea, stage: str, summary: str) -> None:
 
 def _agentops_init() -> bool:
     """Start an AgentOps session if AGENTOPS_API_KEY is set. Returns True if started."""
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        os.environ.pop("IDEATE_AGENTOPS_ACTIVE", None)
+        return False
+
     api_key = os.environ.get("AGENTOPS_API_KEY")
     if not api_key:
+        os.environ.pop("IDEATE_AGENTOPS_ACTIVE", None)
         return False
     try:
         import agentops  # type: ignore[import]
@@ -53,13 +70,16 @@ def _agentops_init() -> bool:
             auto_start_session=True,
             instrument_llm_calls=True,
         )
+        os.environ["IDEATE_AGENTOPS_ACTIVE"] = "1"
         return True
     except Exception:
+        os.environ.pop("IDEATE_AGENTOPS_ACTIVE", None)
         return False
 
 
 def _agentops_end(started: bool, success: bool) -> None:
     if not started:
+        os.environ.pop("IDEATE_AGENTOPS_ACTIVE", None)
         return
     try:
         import agentops  # type: ignore[import]
@@ -67,6 +87,8 @@ def _agentops_end(started: bool, success: bool) -> None:
         agentops.end_session("Success" if success else "Fail")
     except Exception:
         pass
+    finally:
+        os.environ.pop("IDEATE_AGENTOPS_ACTIVE", None)
 
 
 def project_root() -> Path:
@@ -130,6 +152,30 @@ def build_iteration_context(store: Store | PgStore, idea_id: int) -> dict[str, s
     }
 
 
+def validate_iteration_context(context: dict[str, str], *, stage: str) -> None:
+    """Warn (or fail in strict mode) when revision context is unexpectedly sparse."""
+    is_revision_cycle = bool(context.get("review_feedback") or context.get("previous_decision"))
+    if not is_revision_cycle:
+        return
+
+    missing = [
+        key
+        for key in ("previous_research", "previous_debate", "previous_plan")
+        if not context.get(key)
+    ]
+    if not missing:
+        return
+
+    message = (
+        f"iteration context for stage '{stage}' is missing artifacts: "
+        + ", ".join(missing)
+        + ". Consider rerunning missing stages with --force-refresh."
+    )
+    if os.environ.get("IDEATE_STRICT_ITERATION_CONTEXT") == "1":
+        raise RuntimeError(message)
+    print(f"[ideate] warning: {message}", file=sys.stderr)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -187,20 +233,16 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "board-setup":
             idea = store.get_idea(args.idea_id)
+            assert_board_sync_ready()
             for stage in [s.strip() for s in args.stages.split(",") if s.strip()]:
                 members = STAGE_MEMBERS.get(stage, [])
                 if members:
-                    try:
-                        sync_agent_tasks(
-                            idea,
-                            stage,
-                            [AgentTaskUpdate(name, "todo") for name in members],
-                        )
-                    except Exception as exc:
-                        print(
-                            f"[ideate] board-setup warning for stage '{stage}': {exc}",
-                            file=sys.stderr,
-                        )
+                    sync_agent_tasks(
+                        idea,
+                        stage,
+                        [AgentTaskUpdate(name, "todo") for name in members],
+                        fail_open=False,
+                    )
             return _done(0)
 
         idea = store.get_idea(args.idea_id)
@@ -229,6 +271,7 @@ def main(argv: list[str] | None = None) -> int:
                 [AgentTaskUpdate(name, "in_progress") for name in STAGE_MEMBERS["research"]],
             )
             iteration_context = build_iteration_context(store, idea.id)
+            validate_iteration_context(iteration_context, stage="research")
             result = run_research_crew(
                 idea,
                 context=iteration_context,
@@ -256,6 +299,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             research = store.latest_artifact(idea.id, "research")
             iteration_context = build_iteration_context(store, idea.id)
+            validate_iteration_context(iteration_context, stage="debate")
             result = run_debate_crew(
                 idea,
                 research,
@@ -365,6 +409,46 @@ def main(argv: list[str] | None = None) -> int:
             print(f"POC {'created' if feasible else 'skipped'} for idea {idea.id}")
             return _done(0)
 
+        if args.command == "poc-patch":
+            project = poc_dir(root, idea)
+            if not project.exists():
+                print(
+                    f"No POC found for idea {idea.id} at {project}. Run 'idea poc {idea.id}' first.",
+                    file=sys.stderr,
+                )
+                return _done(2, success=False)
+            result = write_poc_patch(root, idea)
+            before_total = result["before"].get("total", 0)
+            after_total = result["after"].get("total", 0)
+            delta = after_total - before_total
+            delta_str = f"+{delta}" if delta >= 0 else str(delta)
+            print(
+                f"POC patch complete for idea {idea.id}: "
+                f"{before_total}/100 → {after_total}/100 ({delta_str}) "
+                f"[{result['after'].get('band', '')}]"
+            )
+            refresh_readme(root, store.get_idea(idea.id))
+            return _done(0)
+
+        if args.command == "score":
+            project = poc_dir(root, idea)
+            path = root / "ideas" / idea.slug
+            if not project.exists():
+                print(
+                    f"No POC found for idea {idea.id} at {project}. Run 'idea poc {idea.id}' first.",
+                    file=sys.stderr,
+                )
+                return _done(2, success=False)
+            score = score_poc_quality(path, project)
+            score_doc = poc_quality_score_report(idea, score, project)
+            improvement_doc = poc_improvement_loop(idea, score)
+            write_text(path / "poc_quality_score.md", score_doc)
+            write_text(path / "poc_improvement_loop.md", improvement_doc)
+            from .notify import send_quality_email
+            send_quality_email(idea.title, score_doc, improvement_doc)
+            print(f"POC quality score for idea {idea.id}: {score.get('total', 0)}/100 ({score.get('band', '')})")
+            return _done(0)
+
         if args.command == "handoff":
             if idea.status not in {"poc", "handoff"} and not args.force:
                 print("Handoff requires POC status. Use --force to override.", file=sys.stderr)
@@ -423,6 +507,15 @@ def build_parser() -> argparse.ArgumentParser:
     poc = sub.add_parser("poc", help="Create a draft POC")
     poc.add_argument("idea_id", type=int)
     poc.add_argument("--force", action="store_true")
+
+    poc_patch = sub.add_parser(
+        "poc-patch",
+        help="Patch missing files in an existing POC without full regeneration",
+    )
+    poc_patch.add_argument("idea_id", type=int)
+
+    score_cmd = sub.add_parser("score", help="Re-score existing POC on disk without regenerating")
+    score_cmd.add_argument("idea_id", type=int)
 
     handoff = sub.add_parser("handoff", help="Package for engineering crew")
     handoff.add_argument("idea_id", type=int)
