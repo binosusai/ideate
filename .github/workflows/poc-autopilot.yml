@@ -42,7 +42,27 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e .[postgres]
 
-      - name: Run autopilot loop
+      - name: Stage 1 - DB schema preflight
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          IDEATE_HOME: ${{ github.workspace }}
+        run: |
+          python - <<'PYEOF'
+          import os
+          import sys
+          from pathlib import Path
+
+          sys.path.insert(0, "src")
+          from ideate.db import PgStore, Store
+
+          root = Path(os.environ.get("IDEATE_HOME", ".")).resolve()
+          database_url = os.environ.get("DATABASE_URL", "").strip()
+          store = PgStore(database_url) if database_url else Store(root / ".ideate" / "ideate.sqlite3")
+          store.init()
+          print("[autopilot] schema preflight complete")
+          PYEOF
+
+      - name: Stage 2 - Autopilot selection and improvement loop
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -88,7 +108,6 @@ jobs:
 
           database_url = os.environ.get("DATABASE_URL", "").strip()
           store = PgStore(database_url) if database_url else Store(root / ".ideate" / "ideate.sqlite3")
-          store.init()
 
           target_score = int((os.environ.get("INPUT_TARGET_SCORE") or "").strip() or "85")
           max_iterations = int((os.environ.get("INPUT_MAX_ITERATIONS") or "").strip() or "2")

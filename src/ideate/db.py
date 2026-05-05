@@ -507,24 +507,31 @@ class PgStore:
     def set_hardened(self, idea_id: int, hardened: bool) -> None:
         conn = self._connect()
         try:
+            try:
+                with conn:
+                    cur = conn.cursor()
+                    cur.execute(
+                        "UPDATE ideas SET hardened = %s, updated_at = NOW() WHERE id = %s",
+                        (bool(hardened), idea_id),
+                    )
+                return
+            except Exception as exc:
+                # Defensive fallback for environments where migration has not run yet.
+                pgcode = getattr(exc, "pgcode", None)
+                if pgcode != "42703" and "column \"hardened\"" not in str(exc).lower():
+                    raise
+
+            # Clear aborted transaction state and retry after adding the column.
+            conn.rollback()
             with conn:
                 cur = conn.cursor()
-                try:
-                    cur.execute(
-                        "UPDATE ideas SET hardened = %s, updated_at = NOW() WHERE id = %s",
-                        (bool(hardened), idea_id),
-                    )
-                except Exception as exc:
-                    # Defensive fallback for environments where migration has not run yet.
-                    if "column \"hardened\"" not in str(exc):
-                        raise
-                    cur.execute(
-                        "ALTER TABLE ideas ADD COLUMN IF NOT EXISTS hardened BOOLEAN NOT NULL DEFAULT FALSE"
-                    )
-                    cur.execute(
-                        "UPDATE ideas SET hardened = %s, updated_at = NOW() WHERE id = %s",
-                        (bool(hardened), idea_id),
-                    )
+                cur.execute(
+                    "ALTER TABLE ideas ADD COLUMN IF NOT EXISTS hardened BOOLEAN NOT NULL DEFAULT FALSE"
+                )
+                cur.execute(
+                    "UPDATE ideas SET hardened = %s, updated_at = NOW() WHERE id = %s",
+                    (bool(hardened), idea_id),
+                )
         finally:
             conn.close()
 
