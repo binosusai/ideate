@@ -95,9 +95,19 @@ jobs:
 
           wanted_statuses = {"approved", "poc", "handoff", "in_progress", "completed"}
           if requested_id:
-            ideas = [store.get_idea(int(requested_id))]
+            forced = store.get_idea(int(requested_id))
+            if forced.hardened:
+              Path("poc_autopilot_summary.md").write_text(
+                  "## POC Autopilot\n\nRequested idea is already hardened; skipping.\n",
+                  encoding="utf-8",
+              )
+              raise SystemExit(0)
+            ideas = [forced]
           else:
-            all_ideas = [i for i in store.list_ideas() if i.status in wanted_statuses]
+            all_ideas = [
+              i for i in store.list_ideas()
+              if i.status in wanted_statuses and not i.hardened
+            ]
             # Fairness-first ordering:
             # 1) never-reviewed ideas first
             # 2) oldest reviewed ideas next
@@ -172,6 +182,7 @@ jobs:
               selected_loop = loop_doc
               selected_project = project
               break
+            store.set_hardened(idea.id, True)
             summary.append(f"- Idea {idea.id} ({idea.slug}): healthy at {total}/100, skipping.")
 
           if selected is None:
@@ -210,6 +221,7 @@ jobs:
             summary.append(f"  - score after iteration {i}: {current}/100")
 
             if current >= target_score:
+              store.set_hardened(selected.id, True)
               summary.append(f"  - target reached; stopping after {i} iteration(s).")
               break
 

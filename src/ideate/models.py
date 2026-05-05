@@ -42,3 +42,4 @@ class Idea:
     review_feedback: str = ""
     last_reviewed_at: str | None = None
     iteration_count: int = 0
+    hardened: bool = False

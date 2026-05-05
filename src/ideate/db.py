@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS ideas (
   why TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'captured',
   score REAL NOT NULL DEFAULT 0,
+        hardened INTEGER NOT NULL DEFAULT 0,
     tinkered INTEGER NOT NULL DEFAULT 0,
     review_status TEXT NOT NULL DEFAULT 'new',
     review_feedback TEXT NOT NULL DEFAULT '',
@@ -110,6 +111,8 @@ class Store:
         }
         if "tinkered" not in columns:
             conn.execute("ALTER TABLE ideas ADD COLUMN tinkered INTEGER NOT NULL DEFAULT 0")
+        if "hardened" not in columns:
+            conn.execute("ALTER TABLE ideas ADD COLUMN hardened INTEGER NOT NULL DEFAULT 0")
         if "review_status" not in columns:
             conn.execute(
                 "ALTER TABLE ideas ADD COLUMN review_status TEXT NOT NULL DEFAULT 'new'"
@@ -184,6 +187,13 @@ class Store:
             conn.execute(
                 "UPDATE ideas SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
                 (status, idea_id),
+            )
+
+    def set_hardened(self, idea_id: int, hardened: bool) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                "UPDATE ideas SET hardened = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (int(bool(hardened)), idea_id),
             )
 
     def add_artifact(self, idea_id: int, kind: str, content: str) -> None:
@@ -304,6 +314,7 @@ def row_to_idea(row: sqlite3.Row | dict) -> Idea:
             else None
         ),
         iteration_count=int(row["iteration_count"]) if "iteration_count" in keys else 0,
+        hardened=bool(row["hardened"]) if "hardened" in keys else False,
     )
 
 
@@ -334,6 +345,7 @@ CREATE TABLE IF NOT EXISTS ideas (
   why TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'captured',
   score REAL NOT NULL DEFAULT 0,
+        hardened BOOLEAN NOT NULL DEFAULT FALSE,
     tinkered BOOLEAN NOT NULL DEFAULT FALSE,
     review_status TEXT NOT NULL DEFAULT 'new',
     review_feedback TEXT NOT NULL DEFAULT '',
@@ -397,6 +409,9 @@ class PgStore:
                 cur.execute(_PG_SCHEMA)
                 cur.execute(
                     "ALTER TABLE ideas ADD COLUMN IF NOT EXISTS tinkered BOOLEAN NOT NULL DEFAULT FALSE"
+                )
+                cur.execute(
+                    "ALTER TABLE ideas ADD COLUMN IF NOT EXISTS hardened BOOLEAN NOT NULL DEFAULT FALSE"
                 )
                 cur.execute(
                     "ALTER TABLE ideas ADD COLUMN IF NOT EXISTS review_status TEXT NOT NULL DEFAULT 'new'"
@@ -485,6 +500,18 @@ class PgStore:
                 cur.execute(
                     "UPDATE ideas SET status = %s, updated_at = NOW() WHERE id = %s",
                     (status, idea_id),
+                )
+        finally:
+            conn.close()
+
+    def set_hardened(self, idea_id: int, hardened: bool) -> None:
+        conn = self._connect()
+        try:
+            with conn:
+                cur = conn.cursor()
+                cur.execute(
+                    "UPDATE ideas SET hardened = %s, updated_at = NOW() WHERE id = %s",
+                    (bool(hardened), idea_id),
                 )
         finally:
             conn.close()
