@@ -65,18 +65,14 @@
           <span>ideate</span>
         </div>
         <h1>Watch agents work</h1>
-        <p>Connect your GitHub repository to see the agent pipeline in real time.</p>
+        <p>Users can onboard instantly. This dashboard reads tasks through a secure server-side connector.</p>
         <form id="config-form" autocomplete="off">
           <div class="field">
-            <label for="repo-input">GitHub repository</label>
-            <input id="repo-input" type="text" placeholder="owner/repo" spellcheck="false" />
-          </div>
-          <div class="field">
-            <label for="token-input">
-              Access token
-              <span class="field-hint">optional · private repos</span>
+            <label for="repo-input">
+              Repository override
+              <span class="field-hint">optional · only if admin did not set IDEATE_TASKS_REPO</span>
             </label>
-            <input id="token-input" type="password" placeholder="ghp_…" />
+            <input id="repo-input" type="text" placeholder="owner/repo" spellcheck="false" />
           </div>
           <div class="field">
             <label for="idea-input">
@@ -86,7 +82,7 @@
             <input id="idea-input" type="number" placeholder="idea ID" min="1" />
           </div>
           <button type="submit" id="connect-btn">
-            <span>Connect</span>
+            <span>Apply</span>
             <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>

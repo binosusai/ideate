@@ -3,7 +3,7 @@
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 
-const CONFIG_KEY = 'ideate_dashboard_v1';
+const CONFIG_KEY = 'ideate_dashboard_v2';
 const POLL_INTERVAL = 30_000; // 30 s
 
 const STAGES = [
@@ -36,7 +36,6 @@ const lastUpdated  = document.getElementById('last-updated');
 const pipelineTrack= document.getElementById('pipeline-track');
 const configForm   = document.getElementById('config-form');
 const repoInput    = document.getElementById('repo-input');
-const tokenInput   = document.getElementById('token-input');
 const ideaInput    = document.getElementById('idea-input');
 const settingsBtn  = document.getElementById('settings-btn');
 
@@ -67,15 +66,13 @@ function hideOverlay() {
 
 // ─── GitHub fetch ────────────────────────────────────────────────────────────
 
-async function fetchIssues({ repo, token, ideaId }) {
-  const headers = {
-    'Accept': 'application/vnd.github+json',
-    'X-GitHub-Api-Version': '2022-11-28',
-  };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
+async function fetchIssues({ repo, ideaId }) {
+  const params = new URLSearchParams();
+  if (ideaId) params.set('ideaId', ideaId);
+  if (repo) params.set('repo', repo);
 
-  const url = `https://api.github.com/repos/${repo}/issues?labels=ideate-task&state=all&per_page=100`;
-  const res = await fetch(url, { headers });
+  const url = `/api/issues?${params.toString()}`;
+  const res = await fetch(url, { method: 'GET' });
 
   if (!res.ok) {
     const detail = await res.json().catch(() => ({}));
@@ -83,14 +80,7 @@ async function fetchIssues({ repo, token, ideaId }) {
   }
 
   const issues = await res.json();
-  if (!Array.isArray(issues)) throw new Error('Unexpected GitHub response.');
-
-  // Client-side filter by idea ID
-  if (ideaId) {
-    return issues.filter(issue =>
-      issue.labels.some(l => l.name === `idea:${ideaId}`)
-    );
-  }
+  if (!Array.isArray(issues)) throw new Error('Unexpected response from dashboard API.');
   return issues;
 }
 
@@ -246,17 +236,16 @@ function stopPolling() {
 configForm.addEventListener('submit', (e) => {
   e.preventDefault();
   const repo   = repoInput.value.trim();
-  const token  = tokenInput.value.trim() || null;
   const ideaId = ideaInput.value.trim() || null;
 
-  if (!repo || !repo.includes('/')) {
+  if (repo && !repo.includes('/')) {
     repoInput.focus();
     repoInput.style.borderColor = '#ef4444';
     setTimeout(() => repoInput.style.borderColor = '', 1200);
     return;
   }
 
-  config = { repo, token, ideaId };
+  config = { repo, ideaId };
   saveConfig(config);
   prevData = null; // force re-render after config change
   hideOverlay();
@@ -294,12 +283,11 @@ function pad(n) { return String(n).padStart(2, '0'); }
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 
 config = loadConfig();
-if (config) {
-  repoInput.value  = config.repo  || '';
-  ideaInput.value  = config.ideaId || '';
-  renderEmpty();
-  startPolling();
-} else {
-  renderEmpty();
-  showOverlay();
+if (!config) {
+  config = { repo: '', ideaId: null };
 }
+
+repoInput.value  = config.repo || '';
+ideaInput.value  = config.ideaId || '';
+renderEmpty();
+startPolling();
