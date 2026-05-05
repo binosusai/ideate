@@ -3,98 +3,118 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ideate · agent pipeline</title>
+    <title>ideate · crew studio</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23f6ebd6'/%3E%3Cpath d='M15 34c7-14 27-18 34-6' stroke='%23f27f61' stroke-width='5' stroke-linecap='round' fill='none'/%3E%3Cpath d='M17 44c9 4 25 3 31-7' stroke='%234b6f5c' stroke-width='5' stroke-linecap='round' fill='none'/%3E%3Ccircle cx='24' cy='21' r='5' fill='%236e7cf6'/%3E%3C/svg%3E" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <!-- Ambient background -->
-    <div class="ambient" aria-hidden="true">
-      <div class="orb orb-a"></div>
-      <div class="orb orb-b"></div>
-      <div class="orb orb-c"></div>
-      <div class="grid-lines"></div>
+    <div class="paper-backdrop" aria-hidden="true">
+      <div class="wash wash-peach"></div>
+      <div class="wash wash-mint"></div>
+      <div class="wash wash-blue"></div>
+      <div class="wash wash-rose"></div>
+      <div class="scribble scribble-a"></div>
+      <div class="scribble scribble-b"></div>
+      <div class="scribble scribble-c"></div>
     </div>
 
-    <!-- Header -->
-    <header class="header">
-      <div class="header-inner">
-        <div class="brand">
-          <svg class="brand-mark" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M10 2L18 6.5V13.5L10 18L2 13.5V6.5L10 2Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-            <circle cx="10" cy="10" r="2.5" fill="currentColor"/>
-          </svg>
-          <span class="brand-name">ideate</span>
-        </div>
-        <div class="header-right">
-          <div class="live-indicator" id="live-indicator">
-            <span class="live-dot"></span>
-            <span class="live-label" id="live-label">live</span>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="brand-lockup">
+          <div class="brand-seal">
+            <span class="brand-dot"></span>
           </div>
-          <span class="last-updated" id="last-updated"></span>
-          <button class="settings-btn" id="settings-btn" aria-label="Settings">
-            <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <circle cx="10" cy="10" r="2.5" stroke="currentColor" stroke-width="1.5"/>
-              <path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.22 4.22l1.42 1.42M14.36 14.36l1.42 1.42M4.22 15.78l1.42-1.42M14.36 5.64l1.42-1.42" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-            </svg>
-          </button>
+          <div>
+            <p class="brand-kicker">ideate studio</p>
+            <h1 class="brand-name">Crew Dashboard</h1>
+          </div>
+        </div>
+        <nav class="topbar-nav" aria-label="Primary">
+          <a class="nav-link is-active" href="index.html">Home</a>
+          <a class="nav-link" href="contact.html">Contact Us</a>
+          <a class="nav-link" href="https://github.com/binosusai/ideate/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">Contributing</a>
+        </nav>
+        <div class="topbar-meta">
+          <span class="topbar-chip">Investor presentation mode</span>
+          <span class="topbar-chip muted">Auth layer later</span>
+          <span class="updated-label" id="updated-label"></span>
         </div>
       </div>
     </header>
 
-    <!-- Pipeline -->
-    <main class="pipeline-wrapper">
-      <div class="pipeline-track" id="pipeline-track">
-        <!-- Columns rendered by JS -->
-      </div>
+    <main class="page-shell">
+      <section class="hero-grid">
+        <div class="hero-copy card card-hero">
+          <p class="hero-eyebrow" id="hero-eyebrow"></p>
+          <h2 class="hero-title" id="hero-title"></h2>
+          <p class="hero-text" id="hero-text"></p>
+          <p class="hero-narrative" id="hero-narrative"></p>
+          <div class="hero-actions">
+            <a class="hero-button primary" href="contact.html">Contact Us</a>
+            <a class="hero-button secondary" href="https://github.com/binosusai/ideate/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">Read Contributing Guide</a>
+          </div>
+          <div class="hero-callouts">
+            <div class="hero-callout">
+              <span>What this shows</span>
+              <strong>Operating hierarchy, specialist roles, clean handoffs</strong>
+            </div>
+            <div class="hero-callout accent">
+              <span>What this hides</span>
+              <strong>Sprint-board mechanics and implementation noise</strong>
+            </div>
+          </div>
+        </div>
+        <aside class="hero-stats" id="summary-stats"></aside>
+      </section>
+
+      <section class="flow-panel card">
+        <div class="section-head">
+          <p class="section-kicker">Operating rhythm</p>
+          <h3>How work moves through the crew</h3>
+        </div>
+        <div class="flow-rail" id="flow-rail"></div>
+      </section>
+
+      <section class="hierarchy-layout">
+        <div class="hierarchy-main card">
+          <div class="section-head">
+            <p class="section-kicker">Crew hierarchy</p>
+            <h3>Decision structure designed to look like a company, not a board</h3>
+          </div>
+          <div id="org-tree"></div>
+          <div id="crew-tree"></div>
+        </div>
+
+        <aside class="principles-panel card">
+          <div class="section-head">
+            <p class="section-kicker">Design principles</p>
+            <h3>Signals that matter to investors</h3>
+          </div>
+          <ol class="principle-list" id="principle-list"></ol>
+          <div class="mini-note">
+            <span class="mini-note-title">Next layer</span>
+            <p>Authentication and live data can plug into this shell later without changing the presentation model.</p>
+          </div>
+        </aside>
+      </section>
     </main>
 
-    <!-- Config / onboarding overlay -->
-    <div class="overlay" id="overlay">
-      <div class="overlay-card">
-        <div class="overlay-brand">
-          <svg class="brand-mark lg" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M10 2L18 6.5V13.5L10 18L2 13.5V6.5L10 2Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-            <circle cx="10" cy="10" r="2.5" fill="currentColor"/>
-          </svg>
-          <span>ideate</span>
+    <footer class="site-footer">
+      <div class="site-footer-inner">
+        <p>Copyright Sidd, binosusai LLC 2026.</p>
+        <div class="site-footer-links">
+          <a href="contact.html">Contact Us</a>
+          <a href="https://github.com/binosusai/ideate" target="_blank" rel="noopener noreferrer">GitHub</a>
+          <a href="https://github.com/binosusai/ideate/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">Contributing</a>
         </div>
-        <h1>Watch agents work</h1>
-        <p>Users can onboard instantly. This dashboard reads tasks through a secure server-side connector.</p>
-        <div class="auth-row">
-          <button type="button" class="secondary-btn" id="github-login-btn">Sign in with GitHub</button>
-          <button type="button" class="secondary-btn" id="github-logout-btn">Sign out</button>
-        </div>
-        <p class="auth-note" id="auth-note">Authentication optional for public repos. Required for private repos unless server token is configured.</p>
-        <form id="config-form" autocomplete="off">
-          <div class="field">
-            <label for="repo-input">
-              Repository override
-              <span class="field-hint">optional · only if admin did not set IDEATE_TASKS_REPO</span>
-            </label>
-            <input id="repo-input" type="text" placeholder="owner/repo" spellcheck="false" />
-          </div>
-          <div class="field">
-            <label for="idea-input">
-              Filter to idea
-              <span class="field-hint">optional · leave blank for all</span>
-            </label>
-            <input id="idea-input" type="number" placeholder="idea ID" min="1" />
-          </div>
-          <button type="submit" id="connect-btn">
-            <span>Apply</span>
-            <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </button>
-        </form>
       </div>
-    </div>
+    </footer>
 
     <script src="app.js"></script>
   </body>
