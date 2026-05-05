@@ -1,0 +1,232 @@
+name: POC Autopilot
+
+on:
+  schedule:
+    - cron: "0 */3 * * *"
+  workflow_dispatch:
+    inputs:
+      idea_id:
+        description: "Optional: force autopilot to work on a specific idea id"
+        required: false
+        type: string
+      target_score:
+        description: "Optional: target score threshold (default 85)"
+        required: false
+        type: string
+      max_iterations:
+        description: "Optional: max improve iterations for this run (default 2)"
+        required: false
+        type: string
+
+concurrency:
+  group: poc-autopilot
+  cancel-in-progress: false
+
+jobs:
+  autopilot:
+    name: Autonomous POC Quality Loop
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[postgres]
+
+      - name: Run autopilot loop
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          AGENTOPS_API_KEY: ${{ secrets.AGENTOPS_API_KEY }}
+          IDEATE_HOME: ${{ github.workspace }}
+          IDEATE_POC_HOME: ${{ github.workspace }}/pocs
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_IDEA_ID: ${{ github.event.inputs.idea_id }}
+          INPUT_TARGET_SCORE: ${{ github.event.inputs.target_score }}
+          INPUT_MAX_ITERATIONS: ${{ github.event.inputs.max_iterations }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          IDEATE_EMAIL_FROM: ${{ secrets.IDEATE_EMAIL_FROM }}
+          IDEATE_EMAIL_TO: ${{ secrets.IDEATE_EMAIL_TO }}
+        run: |
+          python - <<'PYEOF'
+          import os
+          import re
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          sys.path.insert(0, "src")
+
+          from ideate.agents import acceptance_tests, handoff_brief
+          from ideate.db import PgStore, Store
+          from ideate.projects import (
+              is_poc_feasible,
+              poc_improvement_loop,
+              poc_name,
+              poc_quality_score_report,
+              poc_report_for,
+              score_poc_quality,
+              write_text,
+          )
+
+          root = Path(os.environ.get("IDEATE_HOME", ".")).resolve()
+          poc_home = Path(os.environ.get("IDEATE_POC_HOME", root / "pocs")).resolve()
+          ideas_home = root / "ideas"
+          poc_home.mkdir(parents=True, exist_ok=True)
+          ideas_home.mkdir(parents=True, exist_ok=True)
+
+          database_url = os.environ.get("DATABASE_URL", "").strip()
+          store = PgStore(database_url) if database_url else Store(root / ".ideate" / "ideate.sqlite3")
+
+          target_score = int((os.environ.get("INPUT_TARGET_SCORE") or "").strip() or "85")
+          max_iterations = int((os.environ.get("INPUT_MAX_ITERATIONS") or "").strip() or "2")
+          requested_id = (os.environ.get("INPUT_IDEA_ID") or "").strip()
+
+          wanted_statuses = {"approved", "poc", "handoff", "in_progress", "completed"}
+          if requested_id:
+            ideas = [store.get_idea(int(requested_id))]
+          else:
+            all_ideas = [i for i in store.list_ideas() if i.status in wanted_statuses]
+            # Fairness-first ordering:
+            # 1) never-reviewed ideas first
+            # 2) oldest reviewed ideas next
+            # 3) deterministic tie-breaker by id
+            ideas = sorted(
+                all_ideas,
+                key=lambda i: (
+                    i.last_reviewed_at is not None,
+                    i.last_reviewed_at or "1970-01-01T00:00:00Z",
+                    i.id,
+                ),
+            )
+
+          if not ideas:
+            Path("poc_autopilot_summary.md").write_text(
+                "## POC Autopilot\n\nNo eligible ideas found.\n",
+                encoding="utf-8",
+            )
+            raise SystemExit(0)
+
+          org = (os.environ.get("IDEATE_GITHUB_ORG") or "binosusai").strip()
+          token = (os.environ.get("GITHUB_TOKEN") or "").strip()
+
+          summary = [
+            "## POC Autopilot",
+            "",
+            f"Target score: {target_score}",
+            f"Max iterations this run: {max_iterations}",
+            "",
+          ]
+
+          selected = None
+          selected_score = None
+          selected_loop = ""
+          selected_project = None
+
+          for idea in ideas:
+            repo = f"{org}/{poc_name(idea)}"
+            project = poc_home / poc_name(idea)
+            if project.exists():
+              subprocess.run(["rm", "-rf", str(project)], check=True)
+
+            clone_url = (
+              f"https://x-access-token:{token}@github.com/{repo}.git"
+              if token
+              else f"https://github.com/{repo}.git"
+            )
+            clone = subprocess.run(
+              ["git", "clone", "--depth", "1", clone_url, str(project)],
+              capture_output=True,
+              text=True,
+            )
+            if clone.returncode != 0:
+              summary.append(f"- Idea {idea.id} ({idea.slug}): skipped, repo clone failed ({repo}).")
+              continue
+
+            idea_path = ideas_home / idea.slug
+            idea_path.mkdir(parents=True, exist_ok=True)
+            write_text(idea_path / "acceptance_tests.md", acceptance_tests(idea))
+            write_text(idea_path / "poc_report.md", poc_report_for(idea, is_poc_feasible(idea), project))
+            write_text(idea_path / "handoff.md", handoff_brief(idea))
+
+            score = score_poc_quality(idea_path, project)
+            loop_doc = poc_improvement_loop(idea, score)
+            write_text(idea_path / "poc_quality_score.md", poc_quality_score_report(idea, score, project))
+            write_text(idea_path / "poc_improvement_loop.md", loop_doc)
+
+            total = int(score.get("total", 0))
+            if total < target_score:
+              selected = idea
+              selected_score = total
+              selected_loop = loop_doc
+              selected_project = project
+              break
+            summary.append(f"- Idea {idea.id} ({idea.slug}): healthy at {total}/100, skipping.")
+
+          if selected is None:
+            summary.append("")
+            summary.append("All eligible ideas are at or above target score.")
+            Path("poc_autopilot_summary.md").write_text("\n".join(summary) + "\n", encoding="utf-8")
+            raise SystemExit(0)
+
+          summary.append("")
+          summary.append(f"Selected idea: {selected.id} ({selected.slug}) at {selected_score}/100")
+
+          # Build actionable feedback from generated improvement loop.
+          feedback_lines = []
+          for line in selected_loop.splitlines():
+            if line.strip().startswith("-"):
+              feedback_lines.append(line.strip().lstrip("- "))
+          feedback = " ; ".join(feedback_lines[:4]) or "Address weak scoring sections and improve POC completeness."
+
+          def run_cmd(cmd):
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+              raise RuntimeError(f"Command failed ({' '.join(cmd)}): {result.stderr.strip() or result.stdout.strip()}")
+            return result.stdout.strip()
+
+          current = selected_score
+          for i in range(1, max_iterations + 1):
+            summary.append(f"- Iteration {i}: running review -> plan -> poc-patch -> score")
+            run_cmd(["idea", "review", str(selected.id), "--decision", "revise", "--feedback", feedback])
+            run_cmd(["idea", "plan", str(selected.id), "--force-refresh"])
+            run_cmd(["idea", "poc-patch", str(selected.id)])
+            score_out = run_cmd(["idea", "score", str(selected.id)])
+
+            match = re.search(r"(\d+)/100", score_out)
+            if match:
+              current = int(match.group(1))
+            summary.append(f"  - score after iteration {i}: {current}/100")
+
+            if current >= target_score:
+              summary.append(f"  - target reached; stopping after {i} iteration(s).")
+              break
+
+          if current < target_score:
+            summary.append(
+              f"- Remaining below target at {current}/100 after {max_iterations} iteration(s)."
+            )
+            summary.append("- Idea will be reconsidered in a future scheduled run based on fairness ordering.")
+
+          Path("poc_autopilot_summary.md").write_text("\n".join(summary) + "\n", encoding="utf-8")
+          PYEOF
+
+      - name: Write autopilot summary
+        run: |
+          if [ -f "poc_autopilot_summary.md" ]; then
+            cat "poc_autopilot_summary.md" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## POC Autopilot" >> "$GITHUB_STEP_SUMMARY"
+            echo "No summary generated." >> "$GITHUB_STEP_SUMMARY"
+          fi
