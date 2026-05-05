@@ -38,6 +38,9 @@ const configForm   = document.getElementById('config-form');
 const repoInput    = document.getElementById('repo-input');
 const ideaInput    = document.getElementById('idea-input');
 const settingsBtn  = document.getElementById('settings-btn');
+const githubLoginBtn = document.getElementById('github-login-btn');
+const githubLogoutBtn = document.getElementById('github-logout-btn');
+const authNote = document.getElementById('auth-note');
 
 // ─── Config persistence ──────────────────────────────────────────────────────
 
@@ -76,12 +79,38 @@ async function fetchIssues({ repo, ideaId }) {
 
   if (!res.ok) {
     const detail = await res.json().catch(() => ({}));
-    throw new Error(detail.message || `GitHub ${res.status}`);
+    throw new Error(detail.error || detail.message || `Dashboard API ${res.status}`);
   }
 
   const issues = await res.json();
   if (!Array.isArray(issues)) throw new Error('Unexpected response from dashboard API.');
   return issues;
+}
+
+async function refreshAuthStatus() {
+  try {
+    const res = await fetch('/api/auth/status', { method: 'GET' });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.mode === 'server-token') {
+      authNote.textContent = 'Server token configured. Users can view private repository tasks without signing in.';
+      githubLoginBtn.style.display = 'none';
+      githubLogoutBtn.style.display = 'none';
+      return;
+    }
+    if (data.mode === 'github-oauth') {
+      authNote.textContent = 'Signed in with GitHub for private repository access.';
+      githubLoginBtn.style.display = 'none';
+      githubLogoutBtn.style.display = 'inline-flex';
+      return;
+    }
+
+    authNote.textContent = 'Authentication optional for public repos. Required for private repos unless server token is configured.';
+    githubLoginBtn.style.display = 'inline-flex';
+    githubLogoutBtn.style.display = 'none';
+  } catch {
+    // Keep default note if auth status endpoint is unavailable.
+  }
 }
 
 // ─── Parse ───────────────────────────────────────────────────────────────────
@@ -261,6 +290,14 @@ settingsBtn.addEventListener('click', () => {
   showOverlay();
 });
 
+githubLoginBtn.addEventListener('click', () => {
+  window.location.href = '/api/auth/github/login';
+});
+
+githubLogoutBtn.addEventListener('click', () => {
+  window.location.href = '/api/auth/github/logout';
+});
+
 // Close overlay on Escape
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && overlay.classList.contains('visible') && config) {
@@ -290,4 +327,5 @@ if (!config) {
 repoInput.value  = config.repo || '';
 ideaInput.value  = config.ideaId || '';
 renderEmpty();
+refreshAuthStatus();
 startPolling();

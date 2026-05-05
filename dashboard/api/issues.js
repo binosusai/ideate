@@ -1,5 +1,19 @@
 'use strict';
 
+function parseCookies(cookieHeader) {
+  const out = {};
+  if (!cookieHeader) return out;
+  const items = cookieHeader.split(';');
+  for (const item of items) {
+    const idx = item.indexOf('=');
+    if (idx === -1) continue;
+    const key = item.slice(0, idx).trim();
+    const value = item.slice(idx + 1).trim();
+    out[key] = decodeURIComponent(value);
+  }
+  return out;
+}
+
 module.exports = async (req, res) => {
   if (req.method !== 'GET') {
     res.status(405).json({ error: 'Method not allowed' });
@@ -18,7 +32,8 @@ module.exports = async (req, res) => {
   }
 
   const ideaId = typeof req.query.ideaId === 'string' ? req.query.ideaId.trim() : '';
-  const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+  const cookies = parseCookies(req.headers.cookie || '');
+  const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || cookies.ideate_gh_token || '';
 
   const headers = {
     Accept: 'application/vnd.github+json',

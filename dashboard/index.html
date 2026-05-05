@@ -66,6 +66,11 @@
         </div>
         <h1>Watch agents work</h1>
         <p>Users can onboard instantly. This dashboard reads tasks through a secure server-side connector.</p>
+        <div class="auth-row">
+          <button type="button" class="secondary-btn" id="github-login-btn">Sign in with GitHub</button>
+          <button type="button" class="secondary-btn" id="github-logout-btn">Sign out</button>
+        </div>
+        <p class="auth-note" id="auth-note">Authentication optional for public repos. Required for private repos unless server token is configured.</p>
         <form id="config-form" autocomplete="off">
           <div class="field">
             <label for="repo-input">
