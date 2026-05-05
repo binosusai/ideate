@@ -1,35 +1,35 @@
 name: POC Re-score
 
-# Runs quality scoring against the CURRENT state of the POC on disk.
-# No planning crew, no full regeneration — just a fast file-existence score.
-# Use this after you (or poc-improve) have made targeted changes to a POC.
+# Runs quality scoring against historical POC repositories.
+# It discovers ideas from the database, clones each idea's POC repo,
+# materializes idea-side readiness artifacts, and computes deterministic scores.
 #
 # Triggers:
-#   - Automatically: any push that touches pocs/** or ideas/**/poc_*
+#   - Automatically: any push to main (portfolio health refresh)
 #   - Manually: supply idea_id to score a specific idea
 #
 # Required GitHub Actions secrets:
-#   DATABASE_URL        — Neon Postgres (to look up the idea by id)
+#   DATABASE_URL        — Neon Postgres (source of idea records)
 #   SMTP_HOST / SMTP_USER / SMTP_PASS / IDEATE_EMAIL_FROM / IDEATE_EMAIL_TO
 #       — optional; if absent, score is written to step summary only
+#   IDEATE_GITHUB_ORG   — optional; defaults to binosusai
 
 on:
   workflow_dispatch:
     inputs:
       idea_id:
         description: "Idea ID (integer) to re-score"
-        required: true
+        required: false
         type: string
   push:
-    paths:
-      - "pocs/**"
-      - "ideas/**/poc_quality_score.md"
-      - "ideas/**/poc_improvement_loop.md"
+    branches: [main]
 
 jobs:
   rescore:
     name: Re-score POC quality
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - uses: actions/checkout@v4
@@ -40,68 +40,134 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -e .
-
-      - name: Resolve idea_id
-        id: resolve
         run: |
-          if [[ -n "${{ github.event.inputs.idea_id }}" ]]; then
-            echo "idea_id=${{ github.event.inputs.idea_id }}" >> "$GITHUB_OUTPUT"
-          else
-            # On push, score all ideas that have a POC on disk.
-            # We emit a comma-separated list; the next step iterates.
-            IDS=$(python - <<'PYEOF'
-import os, sys
-sys.path.insert(0, "src")
-from ideate.db import PgStore, Store
-from pathlib import Path
-root = Path(".")
-store = PgStore(os.environ["DATABASE_URL"]) if os.environ.get("DATABASE_URL") else Store(root / ".ideate" / "ideate.sqlite3")
-ideas = store.list_ideas()
-ids = [str(i.id) for i in ideas if (root / "pocs").exists()]
-print(",".join(ids))
-PYEOF
-)
-            echo "idea_id=$IDS" >> "$GITHUB_OUTPUT"
-          fi
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          python -m pip install --upgrade pip
+          python -m pip install -e .
 
-      - name: Run idea score for each idea_id
+      - name: Fetch historical POCs and compute quality scores
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IDEATE_HOME: ${{ github.workspace }}
+          IDEATE_POC_HOME: ${{ github.workspace }}/pocs
+          INPUT_IDEA_ID: ${{ github.event.inputs.idea_id }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           IDEATE_EMAIL_FROM: ${{ secrets.IDEATE_EMAIL_FROM }}
           IDEATE_EMAIL_TO: ${{ secrets.IDEATE_EMAIL_TO }}
-          IDEATE_HOME: ${{ github.workspace }}
-          IDEATE_POC_HOME: ${{ github.workspace }}/pocs
         run: |
-          IDS="${{ steps.resolve.outputs.idea_id }}"
-          for ID in $(echo "$IDS" | tr ',' ' '); do
-            echo "--- scoring idea $ID ---"
-            idea score "$ID" || true
-          done
+          python - <<'PYEOF'
+          import os
+          import subprocess
+          import sys
+          from pathlib import Path
 
+          sys.path.insert(0, "src")
+
+          from ideate.agents import acceptance_tests, handoff_brief
+          from ideate.db import PgStore, Store
+          from ideate.projects import (
+              is_poc_feasible,
+              poc_improvement_loop,
+              poc_name,
+              poc_quality_score_report,
+              poc_report_for,
+              score_poc_quality,
+              write_text,
+          )
+          from ideate.notify import send_quality_email
+
+
+          root = Path(os.environ.get("IDEATE_HOME", ".")).resolve()
+          poc_home = Path(os.environ.get("IDEATE_POC_HOME", root / "pocs")).resolve()
+          ideas_home = root / "ideas"
+          poc_home.mkdir(parents=True, exist_ok=True)
+          ideas_home.mkdir(parents=True, exist_ok=True)
+
+          database_url = os.environ.get("DATABASE_URL", "").strip()
+          store = PgStore(database_url) if database_url else Store(root / ".ideate" / "ideate.sqlite3")
+
+          requested_id = os.environ.get("INPUT_IDEA_ID", "").strip()
+          if requested_id:
+            idea_ids = [int(requested_id)]
+            ideas = [store.get_idea(int(requested_id))]
+          else:
+            wanted_statuses = {"approved", "poc", "handoff", "in_progress", "completed"}
+            ideas = [i for i in store.list_ideas() if i.status in wanted_statuses]
+            idea_ids = [i.id for i in ideas]
+
+          if not ideas:
+            Path("poc_rescore_summary.md").write_text(
+                "## POC Re-score Results\n\nNo eligible ideas were found in the database.\n",
+                encoding="utf-8",
+            )
+            print("No eligible ideas were found in the database.")
+            raise SystemExit(0)
+
+          org = (os.environ.get("IDEATE_GITHUB_ORG") or "binosusai").strip()
+          token = os.environ.get("GITHUB_TOKEN", "").strip()
+          summary_lines = [
+              "## POC Re-score Results",
+              "",
+              f"Scored ideas: {', '.join(str(i) for i in idea_ids)}",
+              "",
+              "| Idea | Repo | Score | Band | Status |",
+              "|---|---|---:|---|---|",
+          ]
+
+          for idea in ideas:
+            repo = f"{org}/{poc_name(idea)}"
+            project = poc_home / poc_name(idea)
+
+            if project.exists():
+              subprocess.run(["rm", "-rf", str(project)], check=True)
+
+            clone_url = (
+              f"https://x-access-token:{token}@github.com/{repo}.git"
+              if token
+              else f"https://github.com/{repo}.git"
+            )
+            clone = subprocess.run(
+              ["git", "clone", "--depth", "1", clone_url, str(project)],
+              capture_output=True,
+              text=True,
+            )
+
+            if clone.returncode != 0:
+              summary_lines.append(
+                f"| {idea.id} ({idea.slug}) | `{repo}` | n/a | n/a | clone failed |"
+              )
+              print(f"[ideate] warning: failed to clone {repo}: {clone.stderr.strip()}")
+              continue
+
+            idea_path = ideas_home / idea.slug
+            idea_path.mkdir(parents=True, exist_ok=True)
+
+            # Build idea-side readiness files for deterministic handoff_readiness scoring.
+            write_text(idea_path / "acceptance_tests.md", acceptance_tests(idea))
+            write_text(idea_path / "poc_report.md", poc_report_for(idea, is_poc_feasible(idea), project))
+            write_text(idea_path / "handoff.md", handoff_brief(idea))
+
+            score = score_poc_quality(idea_path, project)
+            score_doc = poc_quality_score_report(idea, score, project)
+            improvement_doc = poc_improvement_loop(idea, score)
+            write_text(idea_path / "poc_quality_score.md", score_doc)
+            write_text(idea_path / "poc_improvement_loop.md", improvement_doc)
+            send_quality_email(idea.title, score_doc, improvement_doc)
+
+            summary_lines.append(
+              f"| {idea.id} ({idea.slug}) | `{repo}` | {score.get('total', 0)}/100 | {score.get('band', 'Unknown')} | ok |"
+            )
+
+          Path("poc_rescore_summary.md").write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
+          print("Wrote poc_rescore_summary.md")
+          PYEOF
       - name: Write score to job summary
-        env:
-          IDEATE_HOME: ${{ github.workspace }}
         run: |
-          {
-            echo "## POC Re-score Results"
-            echo ""
-            for SCORE_FILE in $(find ideas -name "poc_quality_score.md" 2>/dev/null); do
-              IDEA_DIR=$(dirname "$SCORE_FILE")
-              echo "### $(basename $IDEA_DIR)"
-              cat "$SCORE_FILE"
-              echo ""
-              LOOP_FILE="$IDEA_DIR/poc_improvement_loop.md"
-              if [ -f "$LOOP_FILE" ]; then
-                echo "#### Recommended Actions"
-                grep -A 100 "## Recommended Actions" "$LOOP_FILE" | head -20 || true
-              fi
-              echo "---"
-            done
-          } >> "$GITHUB_STEP_SUMMARY"
+          if [ -f "poc_rescore_summary.md" ]; then
+            cat "poc_rescore_summary.md" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## POC Re-score Results" >> "$GITHUB_STEP_SUMMARY"
+            echo "No summary file produced." >> "$GITHUB_STEP_SUMMARY"
+          fi
