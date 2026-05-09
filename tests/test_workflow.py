@@ -96,6 +96,33 @@ def test_poc_requires_approval_without_force(tmp_path: Path) -> None:
     assert run(tmp_path, "poc", "1") == 2
 
 
+def test_capture_supports_yaml_file(tmp_path: Path) -> None:
+        assert run(tmp_path, "init") == 0
+        payload = tmp_path / "idea.yaml"
+        payload.write_text(
+                """title: AI invoice follow-up assistant
+category: money
+why: I want a weekly pipeline that turns new invoices into polite reminders.
+details:
+    target_users:
+        - independent consultants
+        - agencies
+    constraints:
+        - no CRM required
+        - email-first MVP
+""",
+                encoding="utf-8",
+        )
+
+        assert run(tmp_path, "capture", "--from-yaml", str(payload)) == 0
+
+        store = Store(tmp_path / ".ideate" / "ideate.sqlite3")
+        idea = store.get_idea(1)
+        assert idea.title == "AI invoice follow-up assistant"
+        assert idea.category == "money"
+        assert "Additional details from YAML" in idea.why
+
+
 def test_daily_handles_empty_database(tmp_path: Path) -> None:
     assert run(tmp_path, "init") == 0
     assert run(tmp_path, "daily") == 0

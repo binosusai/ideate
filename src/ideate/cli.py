@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from textwrap import dedent
 
 from .agents import debate_brief, research_brief
 from .board_sync import AgentTaskUpdate, assert_board_sync_ready, sync_agent_tasks
@@ -178,6 +179,57 @@ def validate_iteration_context(context: dict[str, str], *, stage: str) -> None:
     print(f"[ideate] warning: {message}", file=sys.stderr)
 
 
+def _normalize_from_yaml(path: Path) -> dict[str, str]:
+    """Load a capture payload from YAML and map it to capture fields.
+
+    Expected structure:
+      title: string (required)
+      category: money|personal (optional, defaults to money)
+      why: string (optional)
+      details: map/list/string (optional, appended into why)
+    """
+    try:
+        import yaml  # type: ignore[import]
+    except Exception as exc:
+        raise RuntimeError(
+            "YAML support requires PyYAML. Install dependencies and retry."
+        ) from exc
+
+    if not path.exists():
+        raise RuntimeError(f"YAML file was not found: {path}")
+
+    try:
+        payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise RuntimeError(f"Failed to parse YAML at {path}: {exc}") from exc
+
+    if not isinstance(payload, dict):
+        raise RuntimeError("YAML capture file must contain a top-level mapping/object.")
+
+    title = str(payload.get("title", "")).strip()
+    if not title:
+        raise RuntimeError("YAML capture file requires a non-empty 'title' field.")
+
+    category = str(payload.get("category", "money")).strip() or "money"
+    if category not in CATEGORIES:
+        allowed = ", ".join(sorted(CATEGORIES))
+        raise RuntimeError(f"Invalid category '{category}'. Expected one of: {allowed}")
+
+    why = str(payload.get("why", "")).strip()
+    details = payload.get("details")
+    if details not in (None, "", [], {}):
+        rendered = yaml.safe_dump(details, sort_keys=False).strip()
+        details_block = dedent(
+            f"""
+            Additional details from YAML:
+            {rendered}
+            """
+        ).strip()
+        why = f"{why}\n\n{details_block}".strip() if why else details_block
+
+    return {"title": title, "category": category, "why": why}
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -199,7 +251,16 @@ def main(argv: list[str] | None = None) -> int:
         store.init()
 
         if args.command == "capture":
-            idea = store.add_idea(args.title, args.category, args.why or "")
+            if args.from_yaml:
+                parsed = _normalize_from_yaml(Path(args.from_yaml))
+                title = parsed["title"]
+                category = parsed["category"]
+                why = parsed["why"]
+            else:
+                title = args.title
+                category = args.category
+                why = args.why or ""
+            idea = store.add_idea(title, category, why)
             store.log_run("capture", f"Captured idea {idea.id}: {idea.title}", idea.id)
             print(format_idea(idea))
             # Auto-create board issues for all stages so they appear as ToDo immediately.
@@ -514,9 +575,16 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("init", help="Initialize local database and folders")
 
     capture = sub.add_parser("capture", help="Capture a new idea")
-    capture.add_argument("title")
+    capture.add_argument("title", nargs="?")
     capture.add_argument("--category", choices=sorted(CATEGORIES), default="money")
     capture.add_argument("--why", default="")
+    capture.add_argument(
+        "--from-yaml",
+        help=(
+            "Path to YAML capture file. "
+            "Schema: title (required), category (optional), why (optional), details (optional)."
+        ),
+    )
 
     list_cmd = sub.add_parser("list", help="List ideas")
     list_cmd.add_argument("--status")
@@ -565,6 +633,18 @@ def build_parser() -> argparse.ArgumentParser:
     board_setup.add_argument("idea_id", type=int)
     board_setup.add_argument("--stages", default="research,debate,planning,poc", help="Comma-separated stages")
 
+    original_parse_args = parser.parse_args
+
+    def parse_args_with_capture_validation(argv: list[str] | None = None):
+        args = original_parse_args(argv)
+        if args.command == "capture":
+            if args.from_yaml and args.title:
+                parser.error("capture accepts either title or --from-yaml, not both")
+            if not args.from_yaml and not args.title:
+                parser.error("capture requires title or --from-yaml")
+        return args
+
+    parser.parse_args = parse_args_with_capture_validation  # type: ignore[assignment]
     return parser
 
 

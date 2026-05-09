@@ -1,0 +1,16 @@
+title: AI invoice follow-up assistant
+category: money
+why: I want a weekly pipeline that turns new invoices into polite reminders.
+details:
+  target_users:
+    - independent consultants
+    - agencies
+  constraints:
+    - no CRM required
+    - email-first MVP
+  monetization:
+    model: monthly subscription
+    starting_price_usd: 19
+  differentiation:
+    - auto-detect tone from prior threads
+    - pause reminders when replies arrive

@@ -8,6 +8,7 @@ Ideate is a local-first Idea Implementation AI Agent Crew. It captures ideas, ra
 cd /Users/siddharthshankar/workspace/codex/ideate
 PYTHONPATH=src python3 -m ideate.cli init
 PYTHONPATH=src python3 -m ideate.cli capture "AI agent that turns rough ideas into POCs" --category money --why "I forget good ideas when I am busy"
+PYTHONPATH=src python3 -m ideate.cli capture --from-yaml examples/idea.capture.yaml
 PYTHONPATH=src python3 -m ideate.cli daily
 PYTHONPATH=src python3 -m ideate.cli research 1
 PYTHONPATH=src python3 -m ideate.cli debate 1
@@ -18,6 +19,39 @@ PYTHONPATH=src python3 -m ideate.cli handoff 1
 ```
 
 By default, Ideate stores state in `.ideate/ideate.sqlite3`, creates idea memory folders in `ideas/`, and creates runnable POCs as sibling projects in `../pocs/`.
+
+## Capture From YAML
+
+You can capture ideas natively from YAML:
+
+```bash
+PYTHONPATH=src python3 -m ideate.cli capture --from-yaml examples/idea.capture.yaml
+```
+
+Use this schema:
+
+```yaml
+title: AI invoice follow-up assistant
+category: money
+why: I want a weekly pipeline that turns new invoices into polite reminders.
+details:
+  target_users:
+    - independent consultants
+    - agencies
+  constraints:
+    - no CRM required
+    - email-first MVP
+  monetization:
+    model: monthly subscription
+    starting_price_usd: 19
+```
+
+Field rules:
+
+1. `title` is required.
+2. `category` is optional (`money` or `personal`, defaults to `money`).
+3. `why` is optional.
+4. `details` is optional and can be a map/list/string. It is appended into the stored `why` so richer context is preserved.
 
 ## Workflow
 
