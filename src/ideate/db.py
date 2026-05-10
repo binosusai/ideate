@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable
 
 from .models import CATEGORIES, REVIEW_STATUSES, STATUSES, Idea
 from .text import ranchi_codename
@@ -50,6 +51,7 @@ CREATE TABLE IF NOT EXISTS ideas (
   slug TEXT NOT NULL UNIQUE,
   category TEXT NOT NULL CHECK(category IN ('money', 'personal')),
   why TEXT NOT NULL DEFAULT '',
+  details_json TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'captured',
   score REAL NOT NULL DEFAULT 0,
         hardened INTEGER NOT NULL DEFAULT 0,
@@ -127,8 +129,16 @@ class Store:
             conn.execute(
                 "ALTER TABLE ideas ADD COLUMN iteration_count INTEGER NOT NULL DEFAULT 0"
             )
+        if "details_json" not in columns:
+            conn.execute("ALTER TABLE ideas ADD COLUMN details_json TEXT NOT NULL DEFAULT ''")
 
-    def add_idea(self, title: str, category: str, why: str) -> Idea:
+    def add_idea(
+        self,
+        title: str,
+        category: str,
+        why: str,
+        details: dict[str, Any] | list[Any] | None = None,
+    ) -> Idea:
         if category not in CATEGORIES:
             raise ValueError(f"category must be one of: {', '.join(sorted(CATEGORIES))}")
 
@@ -136,12 +146,13 @@ class Store:
         with self.connect() as conn:
             slug = self._unique_slug(conn, base_slug)
             score = initial_score(title, category, why)
+            details_json = _details_to_json(details)
             conn.execute(
                 """
-                INSERT INTO ideas(title, slug, category, why, score)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO ideas(title, slug, category, why, details_json, score)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (title.strip(), slug, category, why.strip(), score),
+                (title.strip(), slug, category, why.strip(), details_json, score),
             )
             row = conn.execute("SELECT * FROM ideas WHERE slug = ?", (slug,)).fetchone()
         return row_to_idea(row)
@@ -293,6 +304,24 @@ class Store:
         return candidate
 
 
+def _details_to_json(details: dict[str, Any] | list[Any] | None) -> str:
+    if details in (None, {}, []):
+        return "{}"
+    return json.dumps(details, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def _details_from_json(raw: Any) -> dict[str, Any] | list[Any] | None:
+    if raw in (None, ""):
+        return None
+    if isinstance(raw, (dict, list)):
+        return raw
+    try:
+        parsed = json.loads(str(raw))
+    except (TypeError, ValueError):
+        return None
+    return parsed if isinstance(parsed, (dict, list)) else None
+
+
 def row_to_idea(row: sqlite3.Row | dict) -> Idea:
     keys = set(row.keys())
     return Idea(
@@ -315,6 +344,7 @@ def row_to_idea(row: sqlite3.Row | dict) -> Idea:
         ),
         iteration_count=int(row["iteration_count"]) if "iteration_count" in keys else 0,
         hardened=bool(row["hardened"]) if "hardened" in keys else False,
+        details=_details_from_json(row["details_json"]) if "details_json" in keys else None,
     )
 
 
@@ -343,6 +373,7 @@ CREATE TABLE IF NOT EXISTS ideas (
   slug TEXT NOT NULL UNIQUE,
   category TEXT NOT NULL CHECK(category IN ('money', 'personal')),
   why TEXT NOT NULL DEFAULT '',
+  details_json JSONB NOT NULL DEFAULT '{}'::jsonb,
   status TEXT NOT NULL DEFAULT 'captured',
   score REAL NOT NULL DEFAULT 0,
         hardened BOOLEAN NOT NULL DEFAULT FALSE,
@@ -386,6 +417,9 @@ class PgStore:
 
     def __init__(self, database_url: str) -> None:
         self._url = database_url
+        import re
+        safe_url = re.sub(r'//([^:]+):[^@]+@', r'//\1:***@', database_url)
+        print(f"[DEBUG] Connecting to Postgres: {safe_url}", flush=True)
 
     def _connect(self):
         try:
@@ -425,22 +459,32 @@ class PgStore:
                 cur.execute(
                     "ALTER TABLE ideas ADD COLUMN IF NOT EXISTS iteration_count INTEGER NOT NULL DEFAULT 0"
                 )
+                cur.execute(
+                    "ALTER TABLE ideas ADD COLUMN IF NOT EXISTS details_json JSONB NOT NULL DEFAULT '{}'::jsonb"
+                )
         finally:
             conn.close()
 
-    def add_idea(self, title: str, category: str, why: str) -> Idea:
+    def add_idea(
+        self,
+        title: str,
+        category: str,
+        why: str,
+        details: dict[str, Any] | list[Any] | None = None,
+    ) -> Idea:
         if category not in CATEGORIES:
             raise ValueError(f"category must be one of: {', '.join(sorted(CATEGORIES))}")
         base_slug = ranchi_codename(title, max_len=MAX_IDEA_SLUG_LEN)
         score = initial_score(title, category, why)
+        details_json = _details_to_json(details)
         conn = self._connect()
         try:
             with conn:
                 cur = self._dict_cursor(conn)
                 slug = self._unique_slug(cur, base_slug)
                 cur.execute(
-                    "INSERT INTO ideas(title, slug, category, why, score) VALUES (%s, %s, %s, %s, %s)",
-                    (title.strip(), slug, category, why.strip(), score),
+                    "INSERT INTO ideas(title, slug, category, why, details_json, score) VALUES (%s, %s, %s, %s, %s::jsonb, %s)",
+                    (title.strip(), slug, category, why.strip(), details_json, score),
                 )
                 cur.execute("SELECT * FROM ideas WHERE slug = %s", (slug,))
                 row = cur.fetchone()

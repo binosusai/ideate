@@ -3,13 +3,13 @@
 const crewData = {
   crewName: 'Ideate Investor Studio',
   crewTagline: 'A clear view of how specialized agents turn raw opportunities into decisions, prototypes, and launch-ready handoffs.',
-  updateLabel: 'Refreshed for presentation',
+  updateLabel: 'CLI agent map',
   narrative:
-    'This dashboard is intentionally static for the presentation layer: it shows the operating model, the orchestration hierarchy, and the quality signals behind the crew without exposing sprint-board mechanics.',
+    'This dashboard shows the predefined Ideate CLI agent structure: each idea moves through staged crews, coordinator synthesis, approval gates, and prototype handoff.',
   stats: [
-    { value: '07', label: 'specialist agents', note: 'from sourcing to delivery' },
-    { value: '03', label: 'decision layers', note: 'director, operators, validators' },
-    { value: '18h', label: 'prototype cycle', note: 'from intake to packaged POV' },
+    { value: '19', label: 'predefined agents', note: 'wired into CLI stages' },
+    { value: '06', label: 'workflow stages', note: 'research through handoff' },
+    { value: '01', label: 'coordinator loop', note: 'synthesis after each crew run' },
   ],
   flow: [
     {
@@ -27,84 +27,186 @@ const crewData = {
   ],
   hierarchy: {
     leader: {
-      name: 'Crew Director',
-      role: 'Orchestrates objectives, decides escalation, and approves the final storyline.',
-      focus: 'Capital allocation signal, strategic framing, final coherence',
-      tone: 'North-star judgement',
+      name: 'Ideate CLI Coordinator',
+      role: 'Loads the idea, runs the current stage crew, stores artifacts, and advances workflow status.',
+      focus: 'Idea state, stage execution, artifact persistence',
+      tone: 'Deterministic orchestration',
       badge: 'Command layer',
     },
     branches: [
       {
-        name: 'Discovery Cell',
-        function: 'Builds the first-principles view of the market and opportunity shape.',
+        name: 'Research Crew',
+        function: 'Creates the research artifact and frames buyer, user, and feasibility signals.',
         agents: [
           {
-            name: 'Research Scout',
-            type: 'Scout',
-            status: 'Active now',
-            summary: 'Surfaces market evidence, adjacent operators, and buyer pain.',
-            outputs: ['Market map', 'Competitor compression', 'Demand cues'],
-            handoff: 'Feeds Debate Strategist and Planning Architect',
+            name: 'Market Researcher',
+            type: 'Research',
+            status: 'Stage agent',
+            summary: 'Identifies the narrowest buyer segment, alternatives, willingness-to-pay signals, and entry wedge.',
+            outputs: ['Buyer segment', 'Market signal', 'Entry wedge'],
+            handoff: 'Feeds the debate crew with commercial context',
           },
           {
-            name: 'Pattern Librarian',
-            type: 'Memory',
-            status: 'Warm cache',
-            summary: 'Connects prior ideas, transcripts, and historical experiments.',
-            outputs: ['Pattern recalls', 'Failure analogs', 'Reusable playbooks'],
-            handoff: 'Feeds the full crew with precedent',
+            name: 'User Researcher',
+            type: 'Research',
+            status: 'Stage agent',
+            summary: 'Maps the user trigger, current workaround, sharpest pain, and minimum useful first-run workflow.',
+            outputs: ['User trigger', 'Pain map', 'First workflow'],
+            handoff: 'Feeds the debate crew with user context',
+          },
+          {
+            name: 'Technical Scout',
+            type: 'Research',
+            status: 'Stage agent',
+            summary: 'Assesses whether a credible MVP can be built quickly and what must be mocked.',
+            outputs: ['MVP feasibility', 'Blockers', 'Mock strategy'],
+            handoff: 'Feeds the debate crew with build constraints',
           },
         ],
       },
       {
-        name: 'Decision Cell',
-        function: 'Converts evidence into conviction, tradeoffs, and action paths.',
+        name: 'Debate Crew',
+        function: 'Pressure-tests the idea before planning work begins.',
         agents: [
           {
-            name: 'Debate Strategist',
-            type: 'Contrarian',
-            status: 'In review loop',
-            summary: 'Pressures the thesis, spots weak assumptions, and sharpens the bet.',
-            outputs: ['Risk framing', 'Counter-positioning', 'Go / no-go argument'],
-            handoff: 'Hands an investment-grade stance to the planner',
+            name: 'Advocate',
+            type: 'Debate',
+            status: 'Stage agent',
+            summary: 'Argues why the idea deserves a POC now.',
+            outputs: ['Why now', 'Upside case', 'Momentum signal'],
+            handoff: 'Balances the skeptic and strategist positions',
           },
           {
-            name: 'Planning Architect',
-            type: 'Planner',
-            status: 'Ready',
-            summary: 'Translates the chosen path into milestones, owners, and success gates.',
-            outputs: ['Execution plan', 'Acceptance logic', 'Dependency map'],
-            handoff: 'Feeds the build and review operators',
+            name: 'Skeptic',
+            type: 'Debate',
+            status: 'Stage agent',
+            summary: 'Attacks assumptions, risk, and opportunity cost.',
+            outputs: ['Risk framing', 'Weak assumptions', 'Kill criteria'],
+            handoff: 'Keeps the plan honest',
+          },
+          {
+            name: 'Builder',
+            type: 'Debate',
+            status: 'Stage agent',
+            summary: 'Finds the smallest credible build path.',
+            outputs: ['Build path', 'Scope limit', 'Demo slice'],
+            handoff: 'Feeds planning with implementation shape',
+          },
+          {
+            name: 'Strategist',
+            type: 'Debate',
+            status: 'Stage agent',
+            summary: 'Ranks the idea against focus, money potential, and timing.',
+            outputs: ['Priority read', 'Timing call', 'Go/no-go stance'],
+            handoff: 'Feeds planning with decision posture',
           },
         ],
       },
       {
-        name: 'Delivery Cell',
-        function: 'Packages the concept into a believable prototype and handoff artifact.',
+        name: 'Planning Crew',
+        function: 'Converts the refined idea into MVP workflow, implementation shape, and acceptance checks.',
         agents: [
           {
-            name: 'Prototype Builder',
-            type: 'Maker',
-            status: 'Shipping',
-            summary: 'Produces a concrete proof point that makes the opportunity feel real.',
-            outputs: ['Working proof', 'Technical slice', 'Narrative demo'],
-            handoff: 'Hands build evidence to review and packaging',
+            name: 'Product Planner',
+            type: 'Planning',
+            status: 'Stage agent',
+            summary: 'Turns the refined idea into an MVP workflow.',
+            outputs: ['MVP workflow', 'Milestones', 'Success gates'],
+            handoff: 'Feeds the implementation plan',
           },
           {
-            name: 'Review Guardian',
-            type: 'Validator',
-            status: 'Watching',
-            summary: 'Checks quality, credibility, and narrative consistency before reveal.',
-            outputs: ['Quality flags', 'Credibility notes', 'Readiness verdict'],
-            handoff: 'Approves investor-facing output',
+            name: 'POC Coder',
+            type: 'Planning',
+            status: 'Stage agent',
+            summary: 'Defines the smallest working local proof of concept.',
+            outputs: ['Local proof', 'Runnable slice', 'Code path'],
+            handoff: 'Guides POC generation',
           },
           {
-            name: 'Handoff Narrator',
-            type: 'Closer',
-            status: 'Presenting',
-            summary: 'Turns the output into a clean package for founders, operators, or investors.',
-            outputs: ['Executive brief', 'Next-step memo', 'Decision packet'],
-            handoff: 'Delivers the final artifact outward',
+            name: 'Frontend Engineer',
+            type: 'Planning',
+            status: 'Stage agent',
+            summary: 'Defines the first usable interface for the POC.',
+            outputs: ['UI shape', 'Primary screen', 'Interaction path'],
+            handoff: 'Guides frontend implementation',
+          },
+          {
+            name: 'Backend Engineer',
+            type: 'Planning',
+            status: 'Stage agent',
+            summary: 'Defines API and local persistence needs for the POC.',
+            outputs: ['API shape', 'Data flow', 'Runtime needs'],
+            handoff: 'Guides backend implementation',
+          },
+          {
+            name: 'Auth Engineer',
+            type: 'Planning',
+            status: 'Stage agent',
+            summary: 'Chooses the auth posture for local POC and production handoff.',
+            outputs: ['Auth posture', 'Secret handling', 'Access notes'],
+            handoff: 'Guides security defaults',
+          },
+          {
+            name: 'Database Engineer',
+            type: 'Planning',
+            status: 'Stage agent',
+            summary: 'Chooses local and deployable database defaults.',
+            outputs: ['Schema notes', 'Storage default', 'Migration posture'],
+            handoff: 'Guides persistence implementation',
+          },
+          {
+            name: 'Infra Engineer',
+            type: 'Planning',
+            status: 'Stage agent',
+            summary: 'Defines deployment shape and infrastructure notes.',
+            outputs: ['Infra shape', 'Deploy notes', 'Service choices'],
+            handoff: 'Guides deployment packaging',
+          },
+          {
+            name: 'DevOps Engineer',
+            type: 'Planning',
+            status: 'Stage agent',
+            summary: 'Defines automation, checks, and deployment notes.',
+            outputs: ['CI checks', 'Automation', 'Runbook notes'],
+            handoff: 'Guides repo and workflow setup',
+          },
+          {
+            name: 'OpenSpec Writer',
+            type: 'Planning',
+            status: 'Stage agent',
+            summary: 'Defines implementation requirements and acceptance checks.',
+            outputs: ['Requirements', 'Acceptance checks', 'Task outline'],
+            handoff: 'Feeds OpenSpec artifacts',
+          },
+        ],
+      },
+      {
+        name: 'Delivery Gates',
+        function: 'Turns approved plans into a POC, review loop, and handoff bundle.',
+        agents: [
+          {
+            name: 'POC Builder',
+            type: 'Delivery',
+            status: 'Gate agent',
+            summary: 'Writes or updates the runnable proof of concept.',
+            outputs: ['POC files', 'Quality rubric', 'Score report'],
+            handoff: 'Feeds review',
+          },
+          {
+            name: 'Reviewer',
+            type: 'Delivery',
+            status: 'Gate agent',
+            summary: 'Marks the POC as approved or requests revision feedback.',
+            outputs: ['Review state', 'Revision feedback', 'Iteration count'],
+            handoff: 'Feeds another loop or final handoff',
+          },
+          {
+            name: 'Handoff Packager',
+            type: 'Delivery',
+            status: 'Gate agent',
+            summary: 'Packages final context for the next engineering crew.',
+            outputs: ['Handoff brief', 'POC location', 'Next-step context'],
+            handoff: 'Delivers the final artifact bundle',
           },
         ],
       },
@@ -113,27 +215,78 @@ const crewData = {
   principles: [
     'Each agent owns a narrow decision surface and emits explicit handoffs.',
     'Validation is separated from generation so quality improves before persuasion begins.',
-    'The hierarchy is designed to read like an operating company, not a toy chatbot swarm.',
+    'The hierarchy mirrors the Ideate CLI stages so operators can see where each artifact comes from.',
   ],
-  orgTree: {
-    ceo: 'CEO · Sidd',
-    md: 'Managing Director · Crew Operations',
-    leaders: [
+  agentTree: {
+    name: 'idea CLI',
+    meta: 'root command',
+    children: [
       {
-        title: 'Engineering Managers',
-        summary: 'Own reliability, delivery rhythm, and technical quality gates.',
-      },
-      {
-        title: 'Product Managers',
-        summary: 'Own market shaping, roadmap framing, and customer outcome signals.',
-      },
-      {
-        title: 'Research Leads',
-        summary: 'Own intelligence gathering, trend compression, and hypothesis strength.',
-      },
-      {
-        title: 'Growth and Partnerships',
-        summary: 'Own investor narrative, distribution channels, and strategic alliances.',
+        name: 'Store + Coordinator',
+        meta: 'loads idea, runs stage, writes artifacts',
+        children: [
+          {
+            name: 'Research Crew',
+            meta: 'crew-research artifact',
+            children: [
+              { name: 'Market Researcher', meta: 'buyer and market signal' },
+              { name: 'User Researcher', meta: 'workflow and pain' },
+              { name: 'Technical Scout', meta: 'MVP feasibility' },
+            ],
+          },
+          {
+            name: 'Debate Crew',
+            meta: 'crew-debate artifact',
+            children: [
+              { name: 'Advocate', meta: 'why now' },
+              { name: 'Skeptic', meta: 'risks and weak assumptions' },
+              { name: 'Builder', meta: 'smallest credible build' },
+              { name: 'Strategist', meta: 'priority and timing' },
+            ],
+          },
+          {
+            name: 'Planning Crew',
+            meta: 'crew-planning artifact',
+            children: [
+              {
+                name: 'Product Track',
+                meta: 'workflow and acceptance',
+                children: [
+                  { name: 'Product Planner', meta: 'MVP workflow' },
+                  { name: 'OpenSpec Writer', meta: 'requirements and checks' },
+                ],
+              },
+              {
+                name: 'Build Track',
+                meta: 'implementation shape',
+                children: [
+                  { name: 'POC Coder', meta: 'local proof' },
+                  { name: 'Frontend Engineer', meta: 'first usable UI' },
+                  { name: 'Backend Engineer', meta: 'API shape' },
+                  { name: 'Database Engineer', meta: 'persistence defaults' },
+                ],
+              },
+              {
+                name: 'Platform Track',
+                meta: 'operational readiness',
+                children: [
+                  { name: 'Auth Engineer', meta: 'auth posture' },
+                  { name: 'Infra Engineer', meta: 'deploy shape' },
+                  { name: 'DevOps Engineer', meta: 'checks and automation' },
+                ],
+              },
+            ],
+          },
+          {
+            name: 'Delivery Gates',
+            meta: 'prototype, review, handoff',
+            children: [
+              { name: 'POC Builder', meta: 'writes proof of concept' },
+              { name: 'Reviewer', meta: 'approval or revision loop' },
+              { name: 'Handoff Packager', meta: 'packages next crew context' },
+            ],
+          },
+        ],
       },
     ],
   },
@@ -214,32 +367,33 @@ function branchCard(branch, index) {
   `;
 }
 
-function orgLeaderCard(leader, index) {
+function agentTreeNode(node, depth = 0) {
+  const children = Array.isArray(node.children) && node.children.length
+    ? `<div class="agent-tree-children">${node.children.map((child) => agentTreeNode(child, depth + 1)).join('')}</div>`
+    : '';
+
   return `
-    <article class="org-leader-card" style="animation-delay:${index * 140}ms">
-      <h4>${escapeHtml(leader.title)}</h4>
-      <p>${escapeHtml(leader.summary)}</p>
-    </article>
+    <div class="agent-tree-node depth-${depth}">
+      <div class="agent-tree-card">
+        <strong>${escapeHtml(node.name)}</strong>
+        <span>${escapeHtml(node.meta)}</span>
+      </div>
+      ${children}
+    </div>
   `;
 }
 
 function renderOrgTree() {
   orgTree.innerHTML = `
-    <section class="org-tree-wrap" aria-label="Crew organizational hierarchy">
-      <div class="org-tree-root">${escapeHtml(crewData.orgTree.ceo)}</div>
-      <div class="org-tree-link" aria-hidden="true"></div>
-      <div class="org-tree-md">${escapeHtml(crewData.orgTree.md)}</div>
-      <div class="org-tree-branches" aria-hidden="true"></div>
-      <div class="org-tree-grid">
-        ${crewData.orgTree.leaders.map((leader, index) => orgLeaderCard(leader, index)).join('')}
-      </div>
+    <section class="agent-tree-wrap" aria-label="Ideate CLI agent hierarchy">
+      ${agentTreeNode(crewData.agentTree)}
     </section>
   `;
 }
 
 function renderDashboard() {
   heroEyebrow.textContent = crewData.crewName;
-  heroTitle.textContent = 'A visual operating model for your agent crew';
+  heroTitle.textContent = 'A hierarchical map of the Ideate CLI agent crew';
   heroText.textContent = crewData.crewTagline;
   heroNarrative.textContent = crewData.narrative;
   updatedLabel.textContent = crewData.updateLabel;

@@ -2,15 +2,73 @@ title: AI invoice follow-up assistant
 category: money
 why: I want a weekly pipeline that turns new invoices into polite reminders.
 details:
+  domain: freelance finance automation
+  problem:
+    statement: Freelancers lose cash flow because invoice follow-up is awkward, manual, and easy to forget.
+    pain_points:
+      - late invoices require repeated context switching
+      - follow-up tone is hard to calibrate
+      - current tools remind the sender but do not draft the next action
+    current_workarounds:
+      - calendar reminders
+      - manual spreadsheet tracking
+      - copy/paste email templates
   target_users:
     - independent consultants
     - agencies
+  use_cases:
+    - name: Weekly overdue invoice review
+      actor: independent consultant
+      flow:
+        - import or paste invoice records
+        - detect overdue invoices
+        - draft tone-adjusted follow-up emails
+      success: user sends follow-ups in under 10 minutes
+  examples:
+    - input: Invoice ACME-042 is 14 days overdue and the client was friendly in the last thread.
+      output: Polite follow-up email with amount, due date, and low-friction payment reminder.
+  technology:
+    preferred:
+      - Python
+      - SQLite
+    optional:
+      - FastAPI
+      - simple HTML dashboard
+    avoid:
+      - mandatory CRM integration
   constraints:
     - no CRM required
     - email-first MVP
+  mvp:
+    must_have:
+      - capture invoice records from sample CSV
+      - classify invoice aging bucket
+      - generate follow-up drafts
+      - mark follow-up as sent or snoozed
+    nice_to_have:
+      - tone presets
+      - email thread history import
+    non_goals:
+      - sending live emails without approval
+      - production payment reconciliation
+  acceptance_criteria:
+    - sample CSV produces a ranked overdue invoice list
+    - each overdue invoice has a draft follow-up
+    - drafts include amount, due date, client name, and tone
+    - user can approve, snooze, or mark a draft as sent
+  success_metrics:
+    setup_under_minutes: 5
+    weekly_review_under_minutes: 10
+    live_email_sending_requires_approval: true
   monetization:
     model: monthly subscription
     starting_price_usd: 19
   differentiation:
     - auto-detect tone from prior threads
     - pause reminders when replies arrive
+  risks:
+    - live email integration may slow MVP
+    - bad tone could harm client relationships
+  open_questions:
+    - Should the first version only draft emails or also send them?
+    - Which invoice input format should be supported first?

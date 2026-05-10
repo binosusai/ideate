@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 
 CATEGORIES = {"money", "personal"}
@@ -43,3 +44,4 @@ class Idea:
     last_reviewed_at: str | None = None
     iteration_count: int = 0
     hardened: bool = False
+    details: dict[str, Any] | list[Any] | None = None

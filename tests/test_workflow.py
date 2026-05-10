@@ -121,11 +121,21 @@ details:
         assert idea.title == "AI invoice follow-up assistant"
         assert idea.category == "money"
         assert "Additional details from YAML" in idea.why
+        assert idea.details == {
+            "target_users": ["independent consultants", "agencies"],
+            "constraints": ["no CRM required", "email-first MVP"],
+        }
 
 
 def test_daily_handles_empty_database(tmp_path: Path) -> None:
     assert run(tmp_path, "init") == 0
     assert run(tmp_path, "daily") == 0
+
+
+def test_cli_prints_backend_banner(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert run(tmp_path, "init") == 0
+    captured = capsys.readouterr()
+    assert "[ideate] backend: sqlite" in captured.err
 
 
 def test_poc_enters_pending_review_and_blocks_auto_pick(tmp_path: Path, monkeypatch) -> None:

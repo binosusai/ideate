@@ -134,6 +134,14 @@ def store_for(root: Path) -> Store | PgStore:
     return Store(root / ".ideate" / "ideate.sqlite3")
 
 
+def backend_summary(store: Store | PgStore) -> str:
+    if isinstance(store, PgStore):
+        return "postgres"
+    if isinstance(store, Store):
+        return f"sqlite ({store.path})"
+    return "unknown"
+
+
 def is_eligible_for_auto_pick(idea) -> bool:
     return not idea.tinkered and idea.review_status != "pending_review" and idea.status not in {
         "handoff",
@@ -179,7 +187,7 @@ def validate_iteration_context(context: dict[str, str], *, stage: str) -> None:
     print(f"[ideate] warning: {message}", file=sys.stderr)
 
 
-def _normalize_from_yaml(path: Path) -> dict[str, str]:
+def _normalize_from_yaml(path: Path) -> dict[str, object]:
     """Load a capture payload from YAML and map it to capture fields.
 
     Expected structure:
@@ -227,7 +235,7 @@ def _normalize_from_yaml(path: Path) -> dict[str, str]:
         ).strip()
         why = f"{why}\n\n{details_block}".strip() if why else details_block
 
-    return {"title": title, "category": category, "why": why}
+    return {"title": title, "category": category, "why": why, "details": details}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -235,6 +243,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     root = Path(args.root).resolve() if getattr(args, "root", None) else project_root()
     store = store_for(root)
+    if os.environ.get("IDEATE_SHOW_BACKEND", "1") != "0":
+        print(f"[ideate] backend: {backend_summary(store)}", file=sys.stderr)
     ao_started = _agentops_init()
 
     def _done(code: int, success: bool = True) -> int:
@@ -256,11 +266,13 @@ def main(argv: list[str] | None = None) -> int:
                 title = parsed["title"]
                 category = parsed["category"]
                 why = parsed["why"]
+                details = parsed["details"]
             else:
                 title = args.title
                 category = args.category
                 why = args.why or ""
-            idea = store.add_idea(title, category, why)
+                details = None
+            idea = store.add_idea(title, category, why, details=details)
             store.log_run("capture", f"Captured idea {idea.id}: {idea.title}", idea.id)
             print(format_idea(idea))
             # Auto-create board issues for all stages so they appear as ToDo immediately.
