@@ -127,6 +127,45 @@ details:
         }
 
 
+def test_capture_preserves_all_non_core_yaml_fields(tmp_path: Path) -> None:
+    assert run(tmp_path, "init") == 0
+    payload = tmp_path / "idea.yaml"
+    payload.write_text(
+        """title: Structured idea
+category: engineering productivity
+why: Preserve everything.
+version: 0.1.0
+status: draft
+meta_intent:
+  core_purpose: capture richer context
+problem_definition:
+  statement: top-level fields should not disappear
+details:
+  domain: developer tools
+  target_users:
+    - builders
+""",
+        encoding="utf-8",
+    )
+
+    assert run(tmp_path, "capture", "--from-yaml", str(payload)) == 0
+
+    store = Store(tmp_path / ".ideate" / "ideate.sqlite3")
+    idea = store.get_idea(1)
+    assert idea.category == "money"
+    assert idea.details == {
+        "domain": "developer tools",
+        "target_users": ["builders"],
+        "version": "0.1.0",
+        "status": "draft",
+        "meta_intent": {"core_purpose": "capture richer context"},
+        "problem_definition": {"statement": "top-level fields should not disappear"},
+        "source_category": "engineering productivity",
+        "category_note": "Stored category as 'money' because Ideate currently supports: money, personal.",
+    }
+    assert "problem_definition" in idea.why
+
+
 def test_daily_handles_empty_database(tmp_path: Path) -> None:
     assert run(tmp_path, "init") == 0
     assert run(tmp_path, "daily") == 0

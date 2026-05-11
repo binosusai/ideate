@@ -1,0 +1,71 @@
+title: "Project 'Sentinal-OSS' The Autonomous Contribution Swarm"
+category: engineering productivity
+why: To solve the 'discovery-to-contribution' bottleneck by automating the sourcing, vetting, and technical pre-research of high-value open-source opportunities.
+details:
+  domain: Agentic Open Source Orchestration
+  problem:
+    statement: The signal-to-noise ratio in GitHub's "good-first-issue" ecosystem is decaying. High-quality developers lose hours navigating low-impact bugs, stale repositories, or poorly documented issues.
+    pain_points:
+      - Context Cold-Start: Every new repo requires learning a new directory structure and contribution guide before writing code.
+      - Stale Leads: Issues marked 'good first issue' are often already claimed or the repo is no longer maintained.
+      - Impact Blindness: Hard to tell if a bug fix actually improves the core product or just fixes a typo in a README.
+    current_workarounds:
+      - Manually following "Top Contributors" on X/GitHub.
+      - Setting up complex GitHub Action scrapers that lack LLM reasoning.
+  target_users:
+    - Principal Engineers looking to build "Public Sector" technical influence.
+    - Full-Stack Freelancers seeking to demonstrate expertise in emerging tech stacks.
+    - OSS Maintainers looking to automate the vetting of their own incoming "easy" issues.
+  use_cases:
+    - name: Semantic Opportunity Mining
+      actor: The Agent Swarm
+      flow:
+        - The Hound (Scraper): Interrogates GitHub GraphQL for repos created < 90 days ago with >100 stars and active PR velocity.
+        - The Judge (Ranker): Analyzes the "Issue Quality Score" (IQS) based on description length, linked code snippets, and maintainer responsiveness.
+        - The Architect (Researcher): Clones a shallow copy of the repo, maps the AST (Abstract Syntax Tree), and identifies exactly which files need modification.
+        - The Courier (Emailer): Compiles a "Dev-Ready Brief" including a specific implementation strategy.
+  technology:
+    preferred:
+      - Python (LangGraph for cyclic state management)
+      - PydanticAI (for strict structured data extraction)
+      - GitHub GraphQL API (to minimize over-fetching data)
+    optional:
+      - ChromaDB (local vector store to track "seen" issues and avoid duplicates)
+      - Ollama (running Llama 3 locally for the initial "Scraper" filtering to save tokens)
+    avoid:
+      - Selenium/Headless browsers (too slow, use raw APIs)
+  constraints:
+    - Token Budgeting: Must use 'Cheap' models for broad filtering and 'Premium' models only for the final 3 deep-dives.
+    - Human-in-the-loop: The agent must never comment on a public issue without an explicit CLI 'approve' command.
+  mvp:
+    must_have:
+      - Logic to detect "Ghost Issues" (issues with no maintainer activity for >14 days).
+      - AST-based file mapping (Identify: "To solve this, look at `/src/lib/parser.py`"
+      - Multi-agent state handoff (Scraper -> Ranker -> Researcher).
+      - Markdown-formatted email digests with one-click "Open in VS Code" links.
+    nice_to_have:
+      - Spec-Driven Integration: Automatically generate an OpenSpec `proposal.md` for the identified issue.
+      - Social Proofing: Check if any of your GitHub "Following" list are already contributors to the repo.
+    non_goals:
+      - Becoming an automated "bounty hunter" for paid issues.
+      - Auto-submitting Pull Requests.
+  acceptance_criteria:
+    - Successfully filters out repos with a "Maintainer Response Time" > 48 hours.
+    - Generates a "Technical Implementation Guess" that is at least 60% accurate to the codebase.
+    - Swarm completes a full discovery-to-email cycle in under 120 seconds.
+  success_metrics:
+    - Signal Accuracy: Percentage of recommended issues that the user actually opens in their IDE.
+    - Token Efficiency: Average cost per "Highly Vetted Lead" stays under $0.15 USD.
+    - Discovery Speed: Finding high-impact issues within 24 hours of them being labeled.
+  monetization:
+    model: Usage-based "Credit" system or $12/month Professional tier.
+  differentiation:
+    - Technical Depth: It doesn't just find the issue; it explains *how* the code works before you clone it.
+    - Agentic Spec-Generation: It prepares the OpenSpec files for you so you can jump straight into 'Apply' mode.
+    - Repo Health Vetting: It ignores "Star-farmed" or "Hype-driven" repos that have no actual code activity.
+  risks:
+    - GitHub API rate limits (Needs intelligent caching).
+    - Repository structure variations (Monorepos vs. Polyrepos) breaking the 'Architect' agent's file mapping.
+  open_questions:
+    - Should the 'Architect' agent attempt to run a local `pytest` or `npm test` to verify the bug before reporting it?
+    - How do we handle "Private" OSS (InnerSource) within enterprise environments?

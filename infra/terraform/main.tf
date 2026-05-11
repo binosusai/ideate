@@ -21,7 +21,7 @@ provider "neon" {
 module "neon" {
   source = "../../../platform/terraform-modules/neon-postgres"
 
-  project_name  = "binosusai-ideate"
+  project_name  = "ideate"
   branch_name   = "main"
   database_name = "ideate"
   role_name     = "ideate_app"

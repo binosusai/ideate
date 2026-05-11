@@ -1,0 +1,86 @@
+title: "SOLVENT: Autonomous Liquidity & Debt Orchestrator"
+version: "0.1.0-alpha"
+category: "personal"
+status: "Modified POC Configuration"
+
+meta_intent:
+  core_purpose: "To eliminate financial 'Autopay Collisions' and minimize cumulative interest bleed (APR-tax) through sub-second liquidity re-balancing and behavioral-aware predictive modeling."
+  guiding_principle: "Stateless Re-calibration: The system treats every user deviation not as an error, but as a new 'Ground Truth' for immediate optimization."
+
+problem_definition:
+  statement: "Fragmented financial endpoints create high cognitive latency, leading to unforced errors in cash-flow management."
+  pain_points:
+    - autopay_failure: "Sufficient net liquidity exists, but the specific account target is underfunded at the time of transaction."
+    - interest_leakage: "Surplus cash sits in 0.01% yield accounts while 23%+ APR debt compounds daily."
+    - behavioral_drift: "Standard budget tools are rigid and fail when the user exhibits 'Lifestyle Momentum' (e.g., unplanned high-value purchases)."
+
+target_persona:
+  type: "High-Context Professional / Software Engineer"
+  preferences:
+    - "CLI-first interaction over heavy GUI dashboards."
+    - "Local-first data privacy for sensitive financial history."
+    - "High-density, low-fluff reporting (Data > Encouragement)."
+
+agent_swarm_architecture:
+  sentinel_agent:
+    role: "The Eye"
+    tools: ["Lunch Flow MCP (Real-time Balance Fetching)"]
+    responsibility: "Monitors the delta between 'Available Cash' and 'Upcoming 7-Day Liability Queue'."
+  strategist_agent:
+    role: "The Brain"
+    tools: ["Custom APR-Avalanche Algorithm", "Era MCP (Behavioral Memory)"]
+    responsibility: "Calculates the mathematically optimal payment split across multiple APR-weighted accounts."
+  auditor_agent:
+    role: "The Guardrail"
+    tools: ["System Prompt (Financial Constitution)"]
+    responsibility: "Ensures the Strategist does not suggest moves that drop 'Liquid Safety Buffers' below user-defined minimums."
+
+mcp_server_matrix:
+  primary_servers:
+    - name: "Lunch Flow MCP"
+      function: "Read-only global bank aggregation for balances and raw transaction streams."
+    - name: "Era MCP"
+      function: "Persistent context storage for user behavioral patterns (e.g., 'Ignores paydown in Dec')."
+    - name: "Google Calendar MCP"
+      function: "Intercepting 'Bill Due' dates and 'Travel' blocks to predict spikes in spending."
+  secondary_servers:
+    - name: "Nymbus MCP (Optional)"
+      function: "Workflow initiation for account-to-account (A2A) transfers (requires human 2FA)."
+
+technical_implementation_details:
+  orchestration_framework: "LangGraph (for cyclic State Machine transitions)"
+  data_storage:
+    local_vector_db: "LanceDB (Contextual embedding of spending behavior)"
+    relational_db: "SQLite (Transactional history and account metadata)"
+  llm_inference_strategy:
+    broad_filtering: "Gemini 1.5 Flash (Low cost/latency for raw transaction categorization)"
+    complex_reasoning: "Claude 3.5 Sonnet (For APR optimization and strategy generation)"
+
+logic_algorithms:
+  debt_optimizer_v1:
+    strategy: "Interest-Avalanche-Hybrid"
+    input_vars: 
+      - acct_A: {min: 40, bal: 500, apr: 0.23}
+      - acct_B: {min: 60, bal: 600, apr: 0.21}
+      - available_liquidity: 800
+    logic_steps:
+      - step_1: "Secure Minimums ($100 total) to prevent 'Late Status' flags."
+      - step_2: "Calculate 'Daily Interest Tax' ($500 * 0.23 / 365 vs $600 * 0.21 / 365)."
+      - step_3: "Allocate remaining surplus ($700) into the highest-APR bucket until exhausted."
+  behavioral_recalibration:
+    trigger: "Detected balance deviation > 10% from previous prediction."
+    action: "Stateless reset; update Era MCP with new spending baseline; recalculate paydown path."
+
+mvp_milestones:
+  phase_1_visibility: "Aggregate 3+ accounts into a unified CLI-based Liquidity Heatmap via Lunch Flow MCP."
+  phase_2_prediction: "Launch 'Sentinel' node to flag upcoming Autopay Collisions 48h in advance."
+  phase_3_orchestration: "Implement 'Strategist' for APR-weighted surplus allocation with one-click approval."
+
+monetization_plan:
+  model: "SaaS: Financial Peace Tier"
+  price: 25.00
+  unit: "USD per month"
+
+risk_mitigation:
+  data_lag: "System polls Lunch Flow every 6h; critical alerts trigger immediate forced-refresh."
+  security: "No private keys stored in LLM context; all Nymbus commands require physical 2FA token approval."

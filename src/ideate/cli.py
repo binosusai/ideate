@@ -194,7 +194,10 @@ def _normalize_from_yaml(path: Path) -> dict[str, object]:
       title: string (required)
       category: money|personal (optional, defaults to money)
       why: string (optional)
-      details: map/list/string (optional, appended into why)
+      details: map/list/string (optional)
+
+    Every non-core top-level YAML field is preserved in details_json so richer
+    examples can use domain-specific structure without losing capture data.
     """
     try:
         import yaml  # type: ignore[import]
@@ -218,14 +221,12 @@ def _normalize_from_yaml(path: Path) -> dict[str, object]:
     if not title:
         raise RuntimeError("YAML capture file requires a non-empty 'title' field.")
 
-    category = str(payload.get("category", "money")).strip() or "money"
-    if category not in CATEGORIES:
-        allowed = ", ".join(sorted(CATEGORIES))
-        raise RuntimeError(f"Invalid category '{category}'. Expected one of: {allowed}")
-
+    raw_category = str(payload.get("category", "money")).strip() or "money"
+    category = raw_category if raw_category in CATEGORIES else "money"
     why = str(payload.get("why", "")).strip()
-    details = payload.get("details")
-    if details not in (None, "", [], {}):
+
+    details = _details_from_yaml_payload(payload, raw_category=raw_category, category=category)
+    if details:
         rendered = yaml.safe_dump(details, sort_keys=False).strip()
         details_block = dedent(
             f"""
@@ -236,6 +237,38 @@ def _normalize_from_yaml(path: Path) -> dict[str, object]:
         why = f"{why}\n\n{details_block}".strip() if why else details_block
 
     return {"title": title, "category": category, "why": why, "details": details}
+
+
+def _details_from_yaml_payload(
+    payload: dict,
+    *,
+    raw_category: str,
+    category: str,
+) -> dict[str, object]:
+    core_fields = {"title", "category", "why"}
+    extra_fields = {
+        str(key): value
+        for key, value in payload.items()
+        if key not in core_fields and value not in (None, "", [], {})
+    }
+
+    details = extra_fields.pop("details", None)
+    if isinstance(details, dict):
+        merged: dict[str, object] = {str(key): value for key, value in details.items()}
+        merged.update(extra_fields)
+    elif details not in (None, "", [], {}):
+        merged = {"details": details, **extra_fields}
+    else:
+        merged = extra_fields
+
+    if raw_category != category:
+        merged.setdefault("source_category", raw_category)
+        merged.setdefault(
+            "category_note",
+            f"Stored category as '{category}' because Ideate currently supports: {', '.join(sorted(CATEGORIES))}.",
+        )
+
+    return merged
 
 
 def main(argv: list[str] | None = None) -> int:
