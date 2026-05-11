@@ -302,6 +302,27 @@ const heroTitle = document.getElementById('hero-title');
 const heroText = document.getElementById('hero-text');
 const heroNarrative = document.getElementById('hero-narrative');
 const updatedLabel = document.getElementById('updated-label');
+const boardStatus = document.getElementById('board-status');
+const adminTokenInput = document.getElementById('admin-token');
+const saveTokenButton = document.getElementById('save-token');
+const clearTokenButton = document.getElementById('clear-token');
+const ideaSearch = document.getElementById('idea-search');
+const statusFilter = document.getElementById('status-filter');
+const reviewFilter = document.getElementById('review-filter');
+const refreshBoardButton = document.getElementById('refresh-board');
+const ideaList = document.getElementById('idea-list');
+const ideaDetail = document.getElementById('idea-detail');
+const pendingReviewList = document.getElementById('pending-review-list');
+const pendingCount = document.getElementById('pending-count');
+
+const boardState = {
+  token: sessionStorage.getItem('ideate.dashboard.token') || '',
+  ideas: [],
+  pendingReviews: [],
+  selectedIdeaId: null,
+  selectedDetail: null,
+  loading: false,
+};
 
 function escapeHtml(value) {
   return String(value)
@@ -430,3 +451,313 @@ function renderDashboard() {
 }
 
 renderDashboard();
+
+function statusBadge(value) {
+  const label = String(value || 'new').replace(/_/g, ' ');
+  return `<span class="status-badge status-${escapeHtml(value || 'new')}">${escapeHtml(label)}</span>`;
+}
+
+function setBoardStatus(message, tone = 'neutral') {
+  if (!boardStatus) return;
+  boardStatus.textContent = message || '';
+  boardStatus.dataset.tone = tone;
+}
+
+function authHeaders() {
+  return boardState.token ? { Authorization: `Bearer ${boardState.token}` } : {};
+}
+
+async function apiFetch(path, options = {}) {
+  const response = await fetch(path, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+      ...(options.headers || {}),
+    },
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = payload.error || `Request failed with ${response.status}`;
+    const error = new Error(message);
+    error.status = response.status;
+    error.code = payload.code;
+    throw error;
+  }
+  return payload;
+}
+
+function ideaTitle(idea) {
+  return idea && idea.title ? idea.title : `Idea ${idea && idea.id ? idea.id : ''}`;
+}
+
+function renderIdeaRows() {
+  if (!ideaList) return;
+  if (!boardState.ideas.length) {
+    ideaList.innerHTML = `
+      <tr>
+        <td colspan="4" class="empty-cell">No ideas match the current board filters.</td>
+      </tr>
+    `;
+    return;
+  }
+
+  ideaList.innerHTML = boardState.ideas
+    .map((idea) => {
+      const selected = Number(idea.id) === Number(boardState.selectedIdeaId) ? ' is-selected' : '';
+      return `
+        <tr class="idea-row${selected}" data-idea-id="${escapeHtml(idea.id)}" tabindex="0">
+          <td>
+            <strong>${escapeHtml(ideaTitle(idea))}</strong>
+            <span>${escapeHtml(idea.domain || idea.slug || '')}</span>
+          </td>
+          <td>${statusBadge(idea.status)}</td>
+          <td>${statusBadge(idea.review_status)}</td>
+          <td>${escapeHtml(Math.round(Number(idea.score || 0)))}</td>
+        </tr>
+      `;
+    })
+    .join('');
+}
+
+function artifactPreview(artifacts) {
+  const entries = Object.entries(artifacts || {});
+  if (!entries.length) {
+    return '<p class="detail-muted">No artifacts stored for this idea yet.</p>';
+  }
+  return entries
+    .map(([kind, artifact]) => {
+      const text = String(artifact.content || '').slice(0, 360);
+      return `
+        <article class="artifact-preview">
+          <h5>${escapeHtml(kind.replace(/_/g, ' '))}</h5>
+          <p>${escapeHtml(text)}${artifact.content && artifact.content.length > 360 ? '...' : ''}</p>
+        </article>
+      `;
+    })
+    .join('');
+}
+
+function decisionsPreview(decisions) {
+  if (!Array.isArray(decisions) || !decisions.length) {
+    return '<p class="detail-muted">No dashboard decisions recorded.</p>';
+  }
+  return decisions
+    .slice(0, 5)
+    .map((decision) => `
+      <li>
+        <strong>${escapeHtml(decision.decision)}</strong>
+        <span>${escapeHtml(decision.rationale || '')}</span>
+      </li>
+    `)
+    .join('');
+}
+
+function renderDetail() {
+  if (!ideaDetail) return;
+  const detail = boardState.selectedDetail;
+  if (!detail || !detail.idea) {
+    ideaDetail.innerHTML = `
+      <div class="detail-empty">
+        <p class="section-kicker">Detail</p>
+        <h4>Select an idea</h4>
+      </div>
+    `;
+    return;
+  }
+
+  const idea = detail.idea;
+  const canApprovePlan = idea.status === 'planned';
+  const canReviewPoc = idea.review_status === 'pending_review';
+
+  ideaDetail.innerHTML = `
+    <div class="detail-top">
+      <div>
+        <p class="section-kicker">Idea detail</p>
+        <h4>${escapeHtml(idea.title)}</h4>
+      </div>
+      <div class="detail-badges">
+        ${statusBadge(idea.status)}
+        ${statusBadge(idea.review_status)}
+      </div>
+    </div>
+    <div class="detail-meta">
+      <span>Score ${escapeHtml(Math.round(Number(idea.score || 0)))}</span>
+      <span>${escapeHtml(idea.category || '')}</span>
+      <span>${escapeHtml(idea.slug || '')}</span>
+    </div>
+    <div class="decision-controls">
+      <textarea id="review-feedback" class="feedback-input" rows="4" placeholder="Feedback or rationale">${escapeHtml(idea.review_feedback || '')}</textarea>
+      <div class="decision-actions">
+        <button class="icon-action primary" type="button" data-action="approve-plan" ${canApprovePlan ? '' : 'disabled'}>Approve idea</button>
+        <button class="icon-action primary" type="button" data-action="approve-poc" ${canReviewPoc ? '' : 'disabled'}>Approve POC</button>
+        <button class="icon-action danger" type="button" data-action="revise-poc" ${canReviewPoc ? '' : 'disabled'}>Request revision</button>
+      </div>
+    </div>
+    <div class="detail-section">
+      <h5>Latest artifacts</h5>
+      <div class="artifact-list">${artifactPreview(detail.artifacts)}</div>
+    </div>
+    <div class="detail-section">
+      <h5>Decisions</h5>
+      <ul class="decision-list">${decisionsPreview(detail.decisions)}</ul>
+    </div>
+  `;
+}
+
+function renderPendingReviews() {
+  if (!pendingReviewList || !pendingCount) return;
+  pendingCount.textContent = `${boardState.pendingReviews.length} waiting`;
+  if (!boardState.pendingReviews.length) {
+    pendingReviewList.innerHTML = '<p class="detail-muted">No POCs are waiting for review.</p>';
+    return;
+  }
+  pendingReviewList.innerHTML = boardState.pendingReviews
+    .map((review) => `
+      <button class="pending-item" type="button" data-idea-id="${escapeHtml(review.idea.id)}">
+        <strong>${escapeHtml(review.idea.title)}</strong>
+        <span>${escapeHtml(review.idea.slug || '')}</span>
+      </button>
+    `)
+    .join('');
+}
+
+function boardQuery() {
+  const params = new URLSearchParams();
+  if (statusFilter && statusFilter.value) params.set('status', statusFilter.value);
+  if (reviewFilter && reviewFilter.value) params.set('review_status', reviewFilter.value);
+  if (ideaSearch && ideaSearch.value.trim()) params.set('q', ideaSearch.value.trim());
+  params.set('limit', '75');
+  return params.toString();
+}
+
+async function loadIdeaDetail(ideaId) {
+  boardState.selectedIdeaId = Number(ideaId);
+  renderIdeaRows();
+  const detail = await apiFetch(`/api/ideas/${ideaId}`);
+  boardState.selectedDetail = detail;
+  renderDetail();
+}
+
+async function loadBoard({ selectFirst = false } = {}) {
+  if (!ideaList) return;
+  boardState.loading = true;
+  setBoardStatus('Loading board...', 'neutral');
+  try {
+    const [ideasPayload, pendingPayload] = await Promise.all([
+      apiFetch(`/api/ideas?${boardQuery()}`),
+      apiFetch('/api/reviews/pending'),
+    ]);
+    boardState.ideas = ideasPayload.ideas || [];
+    boardState.pendingReviews = pendingPayload.reviews || [];
+    renderIdeaRows();
+    renderPendingReviews();
+
+    const nextIdeaId = selectFirst && boardState.ideas[0] ? boardState.ideas[0].id : boardState.selectedIdeaId;
+    if (nextIdeaId) {
+      await loadIdeaDetail(nextIdeaId);
+    } else {
+      boardState.selectedDetail = null;
+      renderDetail();
+    }
+    setBoardStatus('Board synced with Neon.', 'success');
+  } catch (error) {
+    renderIdeaRows();
+    renderPendingReviews();
+    renderDetail();
+    const tone = error.status === 401 || error.status === 503 ? 'warn' : 'error';
+    setBoardStatus(error.message, tone);
+  } finally {
+    boardState.loading = false;
+  }
+}
+
+async function mutateSelected(action) {
+  const detail = boardState.selectedDetail;
+  if (!detail || !detail.idea) return;
+  const ideaId = detail.idea.id;
+  const feedbackInput = document.getElementById('review-feedback');
+  const feedback = feedbackInput ? feedbackInput.value.trim() : '';
+
+  setBoardStatus('Saving decision...', 'neutral');
+  try {
+    if (action === 'approve-plan') {
+      await apiFetch(`/api/ideas/${ideaId}/approve`, {
+        method: 'POST',
+        body: JSON.stringify({ rationale: feedback }),
+      });
+    }
+    if (action === 'approve-poc') {
+      await apiFetch(`/api/ideas/${ideaId}/review`, {
+        method: 'POST',
+        body: JSON.stringify({ decision: 'approve', feedback }),
+      });
+    }
+    if (action === 'revise-poc') {
+      await apiFetch(`/api/ideas/${ideaId}/review`, {
+        method: 'POST',
+        body: JSON.stringify({ decision: 'revise', feedback }),
+      });
+    }
+    await loadBoard();
+    await loadIdeaDetail(ideaId);
+    setBoardStatus('Decision saved.', 'success');
+  } catch (error) {
+    setBoardStatus(error.message, error.status === 409 ? 'warn' : 'error');
+  }
+}
+
+function initApprovalBoard() {
+  if (!ideaList) return;
+  adminTokenInput.value = boardState.token;
+  renderDetail();
+
+  saveTokenButton.addEventListener('click', () => {
+    boardState.token = adminTokenInput.value.trim();
+    sessionStorage.setItem('ideate.dashboard.token', boardState.token);
+    loadBoard({ selectFirst: true });
+  });
+
+  clearTokenButton.addEventListener('click', () => {
+    boardState.token = '';
+    adminTokenInput.value = '';
+    sessionStorage.removeItem('ideate.dashboard.token');
+    setBoardStatus('Dashboard token cleared.', 'warn');
+  });
+
+  refreshBoardButton.addEventListener('click', () => loadBoard({ selectFirst: !boardState.selectedIdeaId }));
+  [ideaSearch, statusFilter, reviewFilter].forEach((control) => {
+    control.addEventListener('change', () => loadBoard({ selectFirst: true }));
+  });
+  ideaSearch.addEventListener('input', () => {
+    window.clearTimeout(ideaSearch._boardTimer);
+    ideaSearch._boardTimer = window.setTimeout(() => loadBoard({ selectFirst: true }), 350);
+  });
+
+  ideaList.addEventListener('click', (event) => {
+    const row = event.target.closest('[data-idea-id]');
+    if (row) loadIdeaDetail(row.dataset.ideaId).catch((error) => setBoardStatus(error.message, 'error'));
+  });
+  ideaList.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const row = event.target.closest('[data-idea-id]');
+    if (row) {
+      event.preventDefault();
+      loadIdeaDetail(row.dataset.ideaId).catch((error) => setBoardStatus(error.message, 'error'));
+    }
+  });
+
+  pendingReviewList.addEventListener('click', (event) => {
+    const item = event.target.closest('[data-idea-id]');
+    if (item) loadIdeaDetail(item.dataset.ideaId).catch((error) => setBoardStatus(error.message, 'error'));
+  });
+
+  ideaDetail.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-action]');
+    if (button && !button.disabled) mutateSelected(button.dataset.action);
+  });
+
+  loadBoard({ selectFirst: true });
+}
+
+initApprovalBoard();

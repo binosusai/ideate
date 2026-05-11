@@ -22,12 +22,12 @@
 
 ## 4. Dashboard UI
 
-- [ ] 4.1 Add idea queue view with lifecycle and review-state columns.
-- [ ] 4.2 Add idea detail panel/page.
-- [ ] 4.3 Add pending reviews view.
-- [ ] 4.4 Add approval and revision controls with loading/error states.
-- [ ] 4.5 Add feedback textarea for revision decisions.
-- [ ] 4.6 Preserve the existing agent hierarchy presentation as a separate overview section.
+- [x] 4.1 Add idea queue view with lifecycle and review-state columns.
+- [x] 4.2 Add idea detail panel/page.
+- [x] 4.3 Add pending reviews view.
+- [x] 4.4 Add approval and revision controls with loading/error states.
+- [x] 4.5 Add feedback textarea for revision decisions.
+- [x] 4.6 Preserve the existing agent hierarchy presentation as a separate overview section.
 
 ## 5. Deployment
 

@@ -86,6 +86,70 @@
         <div class="flow-rail" id="flow-rail"></div>
       </section>
 
+      <section class="control-plane card" id="approval-board">
+        <div class="section-head control-head">
+          <div>
+            <p class="section-kicker">Sprint board</p>
+            <h3>Idea approvals and POC reviews</h3>
+          </div>
+          <div class="auth-strip">
+            <input id="admin-token" class="token-input" type="password" autocomplete="off" placeholder="Admin token" />
+            <button id="save-token" class="icon-action primary" type="button">Save</button>
+            <button id="clear-token" class="icon-action" type="button">Clear</button>
+          </div>
+        </div>
+
+        <div class="board-status" id="board-status"></div>
+
+        <div class="control-grid">
+          <div class="queue-panel">
+            <div class="queue-toolbar">
+              <input id="idea-search" class="board-input" type="search" placeholder="Search ideas" />
+              <select id="status-filter" class="board-select" aria-label="Lifecycle filter">
+                <option value="">All lifecycle</option>
+                <option value="captured">Captured</option>
+                <option value="researched">Researched</option>
+                <option value="debated">Debated</option>
+                <option value="planned">Planned</option>
+                <option value="approved">Approved</option>
+              </select>
+              <select id="review-filter" class="board-select" aria-label="Review filter">
+                <option value="">All reviews</option>
+                <option value="new">New</option>
+                <option value="pending_review">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="revise">Revise</option>
+              </select>
+              <button id="refresh-board" class="icon-action" type="button">Refresh</button>
+            </div>
+
+            <div class="idea-table-wrap">
+              <table class="idea-table">
+                <thead>
+                  <tr>
+                    <th>Idea</th>
+                    <th>Lifecycle</th>
+                    <th>Review</th>
+                    <th>Score</th>
+                  </tr>
+                </thead>
+                <tbody id="idea-list"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <aside class="detail-panel" id="idea-detail"></aside>
+        </div>
+
+        <div class="pending-strip">
+          <div class="pending-head">
+            <p class="section-kicker">Pending reviews</p>
+            <span id="pending-count">0 waiting</span>
+          </div>
+          <div class="pending-list" id="pending-review-list"></div>
+        </div>
+      </section>
+
       <section class="hierarchy-layout">
         <div class="hierarchy-main card">
           <div class="section-head">
