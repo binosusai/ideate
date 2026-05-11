@@ -476,6 +476,10 @@ async function apiFetch(path, options = {}) {
       ...(options.headers || {}),
     },
   });
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    throw new Error(`Expected JSON from ${path}, but the dev server returned ${contentType || 'an unknown content type'}.`);
+  }
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     const message = payload.error || `Request failed with ${response.status}`;
@@ -660,7 +664,7 @@ async function loadBoard({ selectFirst = false } = {}) {
       boardState.selectedDetail = null;
       renderDetail();
     }
-    setBoardStatus('Board synced with Neon.', 'success');
+    setBoardStatus(`Board synced with Neon: ${boardState.ideas.length} ideas, ${boardState.pendingReviews.length} pending reviews.`, 'success');
   } catch (error) {
     renderIdeaRows();
     renderPendingReviews();

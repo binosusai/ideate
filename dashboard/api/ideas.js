@@ -1,7 +1,7 @@
 'use strict';
 
-const { listIdeas } = require('../_lib/db');
-const { firstQueryValue, intQueryValue, protectedGet } = require('../_lib/routes');
+const { listIdeas } = require('./_lib/db');
+const { firstQueryValue, intQueryValue, protectedGet } = require('./_lib/routes');
 
 module.exports = async (req, res) => {
   await protectedGet(req, res, async () => {
