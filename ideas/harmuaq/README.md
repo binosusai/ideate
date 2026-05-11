@@ -1,0 +1,149 @@
+# God Mode AI Proxy CLI - The Universal Context Broker
+
+## Status
+`planned`
+
+## Category
+`money`
+
+## Why This Exists
+I need a local-first orchestration pipeline that acts as a middleware control plane to eliminate the "context-switching tax," seamlessly transfer project state between fragmented AI assistants (Claude, Copilot, Gemini), enforce universal guardrails, and actively prune token-heavy history to optimize API costs and prevent vendor lock-in.
+
+Additional details from YAML:
+    domain: developer tools & AI infrastructure
+problem:
+  statement: AI-assisted developers lose continuity, safety, and reusable context
+    when moving work between fragmented assistants.
+  pain_points:
+  - project state is trapped inside vendor-specific chat sessions
+  - every assistant needs repeated setup context
+  - sensitive files need consistent read/write guardrails
+  - token-heavy history makes handoffs expensive and noisy
+  current_workarounds:
+  - manual copy/paste between assistants
+  - hand-written README handoffs
+  - ad-hoc shell aliases and prompt templates
+target_users:
+- full-stack freelance engineers managing multiple limited AI subscriptions
+- security-conscious engineering teams requiring strict data exfiltration guardrails
+- power-user developers practicing Spec-Driven Development (SDD) across varied LLM
+  environments
+use_cases:
+- name: Cross-assistant task handoff
+  actor: full-stack freelance engineer
+  flow:
+  - capture active task state from the current assistant
+  - summarize files, constraints, decisions, and next steps
+  - produce a portable prompt for another assistant
+  success: the next assistant can continue the task without re-explaining the project
+- name: Local no-fly-zone enforcement
+  actor: security-conscious engineering team
+  flow:
+  - define blocked file patterns
+  - intercept or audit context export attempts
+  - refuse to include sensitive paths in handoff bundles
+  success: protected files are never included in exported assistant context
+examples:
+- input: handoff current feature from Claude to Codex
+  output: portable context bundle with task state, constraints, files touched, and
+    next action
+- input: export repo context but block .env and terraform state
+  output: sanitized project digest with blocked-path audit notes
+technology:
+  preferred:
+  - Python
+  - Typer
+  - SQLite
+  - local vector embeddings
+  optional:
+  - LanceDB
+  - FastAPI
+  - filesystem event hooks
+  avoid:
+  - proprietary IDE-only extension dependency
+  - cloud-only memory storage
+  - required team SaaS account for MVP
+constraints:
+- must operate entirely local-first using SQLite and local vector embeddings (e.g.,
+  LanceDB) for code privacy
+- strict CLI-wrapper MVP that intercepts terminal/network requests without relying
+  on complex, proprietary IDE extensions
+- framework-agnostic architecture avoiding dependency on any single vendor's internal
+  memory schema
+- stateless handoff requirement demanding all agents read/write to a centralized ledger
+  before termination
+integrations:
+  required:
+  - local filesystem
+  - shell commands
+  - git metadata
+  optional:
+  - Claude
+  - Codex
+  - GitHub Actions
+mvp:
+  must_have:
+  - initialize a local project ledger
+  - record agent handoff entries
+  - configure no-fly file patterns
+  - export a portable handoff prompt
+  - include an audit summary of included and excluded context
+  nice_to_have:
+  - semantic context pruning
+  - assistant-specific prompt adapters
+  - local embedding index
+  non_goals:
+  - full IDE extension
+  - hosted team RBAC
+  - automatic live command interception across every shell
+acceptance_criteria:
+- user can initialize a local ledger in one command
+- user can write and read a handoff entry
+- blocked file patterns are excluded from exported context
+- generated handoff includes current task, constraints, files touched, decisions,
+  and next action
+- export command produces deterministic output for the same ledger state
+success_metrics:
+  setup_under_minutes: 5
+  handoff_context_tokens_under: 4000
+  zero_secret_file_inclusions: true
+  deterministic_export: true
+monetization:
+  model: open-core local CLI with a premium BYOK SaaS subscription for remote DB state-syncing
+    and team RBAC rules
+  starting_price_usd: 15
+differentiation:
+- cross-agent state handoff leveraging centralized Spec-Driven ledgers to treat AI
+  models as interchangeable, stateless worker nodes
+- universal OS-level file hooks and "No-Fly Zones" (e.g., blanket read/write blocks
+  on .env, secrets, or core logic) enforced at the proxy level
+- intelligent context-pruning algorithms that strip redundant history and irrelevant
+  AST metadata to slash input/output token burn
+- real-time semantic translation layer mapping raw output from one assistant into
+  the optimized prompt structure of the next
+risks:
+- OS-level interception may be too complex for an MVP
+- assistant prompt formats may change frequently
+- users may not trust a proxy with sensitive project context
+open_questions:
+- Should MVP wrap commands or only generate context bundles?
+- Should the first version support one assistant adapter or stay assistant-neutral?
+- Should local embeddings be mandatory or optional after plain-text ledger export
+  works?
+
+## Current Score
+91.0
+
+## Files
+- `research.md`
+- `debate.md`
+- `implementation_plan.md`
+- `crew_transcripts.md`
+- `acceptance_tests.md`
+- `poc_report.md`
+- `poc_location.md`
+- `poc_quality_rubric.md`
+- `poc_quality_score.md`
+- `poc_improvement_loop.md`
+- `handoff.md`
+- `openspec/`
