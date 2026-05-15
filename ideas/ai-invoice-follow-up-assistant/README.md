@@ -19,6 +19,9 @@ Freelancers forget to chase late invoices; agent drafts polite follow-ups, track
 - `crew_transcripts.md`
 - `acceptance_tests.md`
 - `poc_report.md`
+- `poc_location.md`
+- `poc_quality_rubric.md`
+- `poc_quality_score.md`
+- `poc_improvement_loop.md`
 - `handoff.md`
 - `openspec/`
-- `draft_project/`
