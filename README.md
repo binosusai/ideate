@@ -53,6 +53,16 @@ Field rules:
 3. `why` is optional.
 4. `details` is optional and can be a map/list/string. It is appended into the stored `why` so richer context is preserved.
 
+Idea files in `examples/idea*.yml` or `examples/idea*.yaml` are also synced into matching ideas before research, planning, approval, POC, handoff, or OpenSpec regeneration. Matching uses the YAML `title`, the idea slug, the filename stem, and optional `aliases` under `details`. This keeps richer example context in `details_json` before proposals are generated.
+
+To push example context into the active database explicitly:
+
+```bash
+PYTHONPATH=src python3 -m ideate.cli examples-sync
+```
+
+If `DATABASE_URL` is exported, this updates Neon/Postgres. Without `DATABASE_URL`, it updates local SQLite. Add `--capture-missing` to create database rows for example files that do not match an existing idea.
+
 ## Workflow
 
 1. Capture ideas daily.
@@ -88,6 +98,26 @@ POCs are intentionally generated outside `ideate/` so the agent crew factory sta
 ```
 
 Override the POC workspace with `IDEATE_POC_HOME=/path/to/pocs`.
+
+## Optional Dashboard Control Plane
+
+The dashboard can run as a static crew overview, or as a Neon-backed review board with protected API routes. The browser token field only sends credentials to the API; the server must also be started with the same admin token.
+
+```bash
+cd /Users/siddharthshankar/workspace/codex/ideate/dashboard
+npm install
+export DATABASE_URL="<postgres-connection-string>"
+export IDEATE_DASHBOARD_ADMIN_TOKEN="<choose-a-local-token>"
+export IDEATE_TASKS_REPO="owner/repo"
+export GH_TOKEN="<github-token-with-actions-write>"
+npm run start:vercel
+```
+
+Open the local Vercel URL and paste the same admin token into the dashboard token field.
+
+`GH_TOKEN` stays server-side. The dashboard uses it only to dispatch `pipeline.yml` for proposal approval (`poc`) and POC review (`review`). The browser receives only success/error responses.
+
+If you see `Dashboard admin auth is not configured`, the dashboard server was started without `IDEATE_DASHBOARD_ADMIN_TOKEN` in that terminal. Export it again and restart `npm run start:vercel`.
 Override the shared DevOps/infra library with `IDEATE_PLATFORM_HOME=/path/to/platform`.
 
 The workspace-level `platform/` folder is the local version of a future GitHub organization repo. Generated POCs call or document reusable GitHub Actions and Terraform modules from that library by default, and should only add local infra/devops when their architecture differs.

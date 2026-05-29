@@ -31,7 +31,7 @@
 
 ## 5. Deployment
 
-- [ ] 5.1 Document required Vercel environment variables.
+- [x] 5.1 Document required Vercel environment variables.
 - [ ] 5.2 Document Neon connection requirements and least-privilege DB role guidance.
 - [ ] 5.3 Add a deploy checklist for Vercel.
 - [x] 5.4 Confirm static dashboard still builds with `npm run build`.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -78,9 +79,32 @@ def write_planning_files(
     return path
 
 
+def openspec_artifacts(path: Path, idea: Idea) -> dict[str, str]:
+    change = path / "openspec" / "changes" / idea.slug
+    capability = change / "specs" / slugify(idea.title)
+    files = {
+        "openspec_proposal": change / "proposal.md",
+        "openspec_design": change / "design.md",
+        "openspec_tasks": change / "tasks.md",
+        "openspec_spec": capability / "spec.md",
+    }
+    artifacts: dict[str, str] = {}
+    for kind, artifact_path in files.items():
+        if artifact_path.exists():
+            artifacts[kind] = artifact_path.read_text(encoding="utf-8")
+    return artifacts
+
+
 def refresh_readme(root: Path, idea: Idea) -> None:
     path = ensure_idea_folder(root, idea)
     write_text(path / "README.md", idea_readme(idea))
+
+
+def _idea_details_section(idea: Idea) -> str:
+    if not idea.details:
+        return ""
+    rendered = json.dumps(idea.details, indent=2, sort_keys=True, default=str)
+    return f"\n\n## Idea Details\n```json\n{rendered}\n```"
 
 
 def write_openspec(
@@ -96,6 +120,7 @@ def write_openspec(
     research_section = f"\n\n## Research Context\n{research.strip()}" if research.strip() else ""
     debate_section = f"\n\n## Debate Context\n{debate.strip()}" if debate.strip() else ""
     plan_section = f"\n\n## Implementation Plan\n{plan.strip()}" if plan.strip() else ""
+    details_section = _idea_details_section(idea)
     task_lines = build_openspec_task_list(idea, research, debate, plan)
 
     write_text(
@@ -117,6 +142,7 @@ def write_openspec(
             - Defines implementation requirements in `specs/`.
             """,
         )
+        + details_section
         + research_section
         + debate_section,
     )
@@ -143,6 +169,7 @@ def write_openspec(
             - Deployment docs are scaffolding until real cloud accounts and project IDs are selected.
             """,
         )
+        + details_section
         + plan_section,
     )
     write_text(
@@ -188,6 +215,7 @@ def write_openspec(
             - **THEN** it can identify mission, inputs, guardrails, and next tasks
             """,
         )
+        + details_section
         + research_section
         + plan_section,
     )
@@ -381,6 +409,16 @@ def write_poc_patch(root: Path, idea: Idea) -> dict[str, object]:
     file_generators: dict[str, object] = {
         str(project / "backend" / "app.py"):
             lambda: backend_app(idea, context),
+        str(project / "run-local.sh"):
+            lambda: run_local_script(),
+        str(project / "scripts" / "smoke_check.py"):
+            lambda: smoke_check_script(),
+        str(project / "poc.capsule.json"):
+            lambda: poc_capsule_manifest(idea, context, project),
+        str(project / "ecosystem.profile.yaml"):
+            lambda: ecosystem_profile_yaml(idea),
+        str(project / "deploy.targets.json"):
+            lambda: deploy_targets_json(),
         str(project / "frontend" / "index.html"):
             lambda: frontend_index(idea, context),
         str(project / "frontend" / "app.js"):
@@ -397,6 +435,8 @@ def write_poc_patch(root: Path, idea: Idea) -> dict[str, object]:
             lambda: deployment_doc(platform),
         str(project / "docs" / "architecture.md"):
             lambda: architecture_doc(idea, context),
+        str(project / "docs" / "poc_capsule.md"):
+            lambda: poc_capsule_doc(idea, context),
         # handoff_readiness files live in idea_path, not the POC repo.
         str(path / "acceptance_tests.md"):
             lambda: __import__("ideate.agents", fromlist=["acceptance_tests"]).acceptance_tests(idea),
@@ -912,22 +952,23 @@ def poc_quality_rubric(idea: Idea) -> str:
         ## Sections
         1. Core Runtime (20)
         - Backend runtime entrypoint exists (`backend/app.py`)
-        - Backend includes route/handler behavior and startup entrypoint
+        - One-command runner and smoke check exist (`run-local.sh`, `scripts/smoke_check.py`)
+        - Backend includes route/handler behavior, health check, and startup entrypoint
 
         2. Product Surface (20)
         - Frontend essentials exist (`frontend/index.html`, `frontend/app.js`, `frontend/styles.css`)
         - Frontend includes semantic app shell, interactive behavior, and responsive styling signals
 
         3. Delivery Foundation (20)
-        - Infra and CI exist (`infra/terraform/main.tf`, `.github/workflows/poc-ci.yml`)
-        - Infra and CI include provider/resource/test/deploy signals
+        - Infra, CI, deploy targets, and ecosystem profile exist
+        - Delivery files include provider/resource/test/deploy signals
 
         4. Engineering Documentation (20)
-        - Setup and architecture docs exist (`docs/local_setup.md`, `docs/deployment.md`, `docs/architecture.md`)
-        - Docs include concrete run/deploy/architecture signal content
+        - Setup, architecture, deployment, and capsule docs exist
+        - Docs include concrete run/deploy/architecture/capsule signal content
 
         5. Handoff Readiness (20)
-        - Idea-side readiness artifacts exist (`acceptance_tests.md`, `poc_report.md`, `handoff.md`)
+        - Idea-side readiness artifacts and capsule manifest exist
         - Handoff artifacts include explicit acceptance criteria, constraints, and next-step context
 
         ## Grade Bands
@@ -953,7 +994,11 @@ def _has_any(content: str, tokens: tuple[str, ...]) -> bool:
 
 def score_poc_quality(idea_path: Path, project: Path) -> dict[str, object]:
     checks = {
-        "core_runtime": [project / "backend" / "app.py"],
+        "core_runtime": [
+            project / "backend" / "app.py",
+            project / "run-local.sh",
+            project / "scripts" / "smoke_check.py",
+        ],
         "product_surface": [
             project / "frontend" / "index.html",
             project / "frontend" / "app.js",
@@ -962,13 +1007,17 @@ def score_poc_quality(idea_path: Path, project: Path) -> dict[str, object]:
         "delivery_foundation": [
             project / "infra" / "terraform" / "main.tf",
             project / ".github" / "workflows" / "poc-ci.yml",
+            project / "deploy.targets.json",
+            project / "ecosystem.profile.yaml",
         ],
         "engineering_documentation": [
             project / "docs" / "local_setup.md",
             project / "docs" / "deployment.md",
             project / "docs" / "architecture.md",
+            project / "docs" / "poc_capsule.md",
         ],
         "handoff_readiness": [
+            project / "poc.capsule.json",
             idea_path / "acceptance_tests.md",
             idea_path / "poc_report.md",
             idea_path / "handoff.md",
@@ -984,8 +1033,23 @@ def score_poc_quality(idea_path: Path, project: Path) -> dict[str, object]:
             ),
             (
                 project / "backend" / "app.py",
+                "Backend should include a health endpoint",
+                ("/api/health", "health"),
+            ),
+            (
+                project / "backend" / "app.py",
                 "Backend should include app startup/runner logic",
                 ("if __name__", "uvicorn", "app.run", "gunicorn"),
+            ),
+            (
+                project / "run-local.sh",
+                "Local runner should start the backend on localhost",
+                ("python3 backend/app.py", "localhost:8000", "set -euo pipefail"),
+            ),
+            (
+                project / "scripts" / "smoke_check.py",
+                "Smoke check should verify localhost health",
+                ("/api/health", "poc smoke check passed", "urllib.request"),
             ),
         ],
         "product_surface": [
@@ -1016,6 +1080,16 @@ def score_poc_quality(idea_path: Path, project: Path) -> dict[str, object]:
                 "CI workflow should include test/validation execution",
                 ("pytest", "test", "lint", "validate", "workflow_dispatch"),
             ),
+            (
+                project / "deploy.targets.json",
+                "Deploy targets should include local and cloud options",
+                ("vercel-static", "aws-python-api", "neon-postgres", "local"),
+            ),
+            (
+                project / "ecosystem.profile.yaml",
+                "Ecosystem profile should name stack preferences",
+                ("frontend:", "backend:", "database:", "deploy:"),
+            ),
         ],
         "engineering_documentation": [
             (
@@ -1033,8 +1107,18 @@ def score_poc_quality(idea_path: Path, project: Path) -> dict[str, object]:
                 "Architecture doc should describe components/data flow",
                 ("architecture", "component", "api", "database", "flow"),
             ),
+            (
+                project / "docs" / "poc_capsule.md",
+                "Capsule doc should describe local loop and platform contract",
+                ("poc capsule", "run-local.sh", "ecosystem", "minions"),
+            ),
         ],
         "handoff_readiness": [
+            (
+                project / "poc.capsule.json",
+                "Capsule manifest should expose local, deploy, and artifact metadata",
+                ("ideate.poc-capsule.v1", "run-local.sh", "deploy", "artifacts"),
+            ),
             (
                 idea_path / "acceptance_tests.md",
                 "Acceptance tests should contain explicit acceptance criteria",
@@ -1208,6 +1292,11 @@ def write_common_poc_infra(workspace: Path, platform: Path) -> None:
 
 
 def write_draft_project(project: Path, idea: Idea, platform: Path, context: dict[str, str]) -> None:
+    write_text(project / "run-local.sh", run_local_script())
+    write_text(project / "scripts" / "smoke_check.py", smoke_check_script())
+    write_text(project / "poc.capsule.json", poc_capsule_manifest(idea, context, project))
+    write_text(project / "ecosystem.profile.yaml", ecosystem_profile_yaml(idea))
+    write_text(project / "deploy.targets.json", deploy_targets_json())
     write_text(project / "backend" / "app.py", backend_app(idea, context))
     write_text(project / "frontend" / "index.html", frontend_index(idea, context))
     write_text(project / "frontend" / "styles.css", frontend_styles(context))
@@ -1221,7 +1310,197 @@ def write_draft_project(project: Path, idea: Idea, platform: Path, context: dict
     write_text(project / "docs" / "deployment.md", deployment_doc(platform))
     write_text(project / "docs" / "architecture.md", architecture_doc(idea, context))
     write_text(project / "docs" / "devops.md", devops_doc(platform))
+    write_text(project / "docs" / "poc_capsule.md", poc_capsule_doc(idea, context))
     write_text(project / "docs" / "engineering_brief.md", engineering_brief_doc(idea, context))
+    try:
+        os.chmod(project / "run-local.sh", 0o755)
+    except OSError:
+        pass
+
+
+def ecosystem_profile(idea: Idea) -> dict[str, object]:
+    details = idea.details if isinstance(idea.details, dict) else {}
+    raw = details.get("ecosystem") if isinstance(details, dict) else None
+    profile = raw if isinstance(raw, dict) else {}
+    deploy = profile.get("deploy") if isinstance(profile.get("deploy"), dict) else {}
+    return {
+        "frontend": str(profile.get("frontend") or "static-html"),
+        "backend": str(profile.get("backend") or "python-stdlib-api"),
+        "database": str(profile.get("database") or "sqlite-local"),
+        "auth": str(profile.get("auth") or "none-local"),
+        "deploy": {
+            "frontend": str(deploy.get("frontend") or "vercel-static"),
+            "backend": str(deploy.get("backend") or "aws-python-api"),
+            "database": str(deploy.get("database") or "neon-postgres"),
+        },
+        "repo": str(profile.get("repo") or "github"),
+        "project_management": str(profile.get("project_management") or "github-projects"),
+    }
+
+
+def ecosystem_profile_yaml(idea: Idea) -> str:
+    profile = ecosystem_profile(idea)
+    deploy = profile["deploy"]
+    return f"""# POC ecosystem profile. Edit this to adapt future iterations to your stack.
+frontend: {profile["frontend"]}
+backend: {profile["backend"]}
+database: {profile["database"]}
+auth: {profile["auth"]}
+deploy:
+  frontend: {deploy["frontend"]}
+  backend: {deploy["backend"]}
+  database: {deploy["database"]}
+repo: {profile["repo"]}
+project_management: {profile["project_management"]}
+"""
+
+
+def poc_capsule_manifest(idea: Idea, context: dict[str, str], project: Path) -> str:
+    profile = ecosystem_profile(idea)
+    payload = {
+        "schema": "ideate.poc-capsule.v1",
+        "idea": {
+            "id": idea.id,
+            "title": idea.title,
+            "slug": idea.slug,
+            "category": idea.category,
+            "use_case": context.get("use_case", "workflow-assistant"),
+        },
+        "local": {
+            "runner": "./run-local.sh",
+            "url": "http://localhost:8000",
+            "health": "http://localhost:8000/api/health",
+            "smoke_check": "python3 scripts/smoke_check.py",
+        },
+        "deploy": {
+            "targets_file": "deploy.targets.json",
+            "docs": "docs/deployment.md",
+            "terraform_entrypoint": "infra/terraform/main.tf",
+        },
+        "ecosystem": profile,
+        "artifacts": [
+            "README.md",
+            "poc.capsule.json",
+            "ecosystem.profile.yaml",
+            "deploy.targets.json",
+            "docs/poc_capsule.md",
+            "docs/local_setup.md",
+            "docs/deployment.md",
+            "docs/architecture.md",
+            "openspec/",
+        ],
+        "project_path": str(project),
+    }
+    return json.dumps(payload, indent=2, sort_keys=True) + "\n"
+
+
+def deploy_targets_json() -> str:
+    payload = {
+        "schema": "ideate.deploy-targets.v1",
+        "default": "local",
+        "targets": {
+            "local": {
+                "runtime": "python-stdlib",
+                "command": "./run-local.sh",
+                "url": "http://localhost:8000",
+            },
+            "vercel-static": {
+                "kind": "frontend",
+                "path": "frontend/",
+                "notes": "Deploy as static frontend once backend URL is configured.",
+            },
+            "aws-python-api": {
+                "kind": "backend",
+                "path": "backend/app.py",
+                "notes": "Adapt to Lambda/API Gateway, App Runner, ECS, or the shared platform module.",
+            },
+            "neon-postgres": {
+                "kind": "database",
+                "notes": "Use when local SQLite needs hosted relational persistence.",
+            },
+        },
+    }
+    return json.dumps(payload, indent=2, sort_keys=True) + "\n"
+
+
+def run_local_script() -> str:
+    return """#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")"
+echo "[poc] starting local server at http://localhost:8000"
+python3 backend/app.py
+"""
+
+
+def smoke_check_script() -> str:
+    return '''from __future__ import annotations
+
+import json
+import urllib.request
+
+
+def fetch(path: str) -> tuple[int, str]:
+    with urllib.request.urlopen(f"http://localhost:8000{path}", timeout=5) as response:
+        return response.status, response.read().decode("utf-8", errors="replace")
+
+
+def main() -> int:
+    status, body = fetch("/api/health")
+    if status != 200:
+        raise SystemExit(f"health check failed: {status}")
+    payload = json.loads(body)
+    if not payload.get("ok"):
+        raise SystemExit(f"health payload is not ok: {payload}")
+    print("POC smoke check passed")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+'''
+
+
+def poc_capsule_doc(idea: Idea, context: dict[str, str]) -> str:
+    profile = ecosystem_profile(idea)
+    deploy = profile["deploy"]
+    return md(
+        "POC Capsule",
+        f"""
+        ## Purpose
+        This folder is an Ideate POC Capsule: a lightweight, runnable local proof of concept plus enough metadata to plug into a user's ecosystem later.
+
+        ## Capsule Files
+        - `poc.capsule.json`: machine-readable capsule manifest
+        - `ecosystem.profile.yaml`: stack and workflow preferences
+        - `deploy.targets.json`: local and cloud deployment targets
+        - `run-local.sh`: one-command local runner
+        - `scripts/smoke_check.py`: localhost health check
+        - `docs/deployment.md`: cloud deployment path
+        - `openspec/`: implementation requirements copied from Ideate
+
+        ## Local Loop
+        ```bash
+        ./run-local.sh
+        python3 scripts/smoke_check.py
+        ```
+
+        ## Ecosystem Defaults
+        - Frontend: `{profile["frontend"]}`
+        - Backend: `{profile["backend"]}`
+        - Database: `{profile["database"]}`
+        - Auth: `{profile["auth"]}`
+        - Frontend deploy: `{deploy["frontend"]}`
+        - Backend deploy: `{deploy["backend"]}`
+        - Database deploy: `{deploy["database"]}`
+
+        ## Next Platform Step
+        When the POC is accepted, hand this capsule to Minions or another execution platform using `poc.capsule.json` as the stable contract.
+
+        ## Use Case
+        `{context.get("use_case", "workflow-assistant")}`
+        """,
+    )
 
 
 def component_diagram_mermaid(idea: Idea, context: dict[str, str]) -> str:
@@ -1252,6 +1531,10 @@ def project_readme(idea: Idea, context: dict[str, str]) -> str:
         `{context.get("use_case", "workflow-assistant")}`
 
         ## What Is Included
+        - POC capsule manifest in `poc.capsule.json`
+        - Ecosystem profile in `ecosystem.profile.yaml`
+        - One-command local runner in `run-local.sh`
+        - Smoke check in `scripts/smoke_check.py`
         - Runnable backend API in `backend/`
         - Interactive frontend in `frontend/`
         - Local SQLite persistence
@@ -1263,10 +1546,18 @@ def project_readme(idea: Idea, context: dict[str, str]) -> str:
         ## Run Locally
 
         ```bash
-        python3 backend/app.py
+        ./run-local.sh
         ```
 
         Then open `http://localhost:8000`.
+
+        ## Smoke Check
+
+        In another terminal:
+
+        ```bash
+        python3 scripts/smoke_check.py
+        ```
 
         ## Component Diagram
 
@@ -1939,10 +2230,22 @@ def local_setup_doc() -> str:
 
         ## Run
         ```bash
-        python3 backend/app.py
+        ./run-local.sh
         ```
 
         Open `http://localhost:8000`.
+
+        ## Smoke Check
+        With the local server running:
+
+        ```bash
+        python3 scripts/smoke_check.py
+        ```
+
+        ## Capsule Metadata
+        - `poc.capsule.json`: generated POC contract
+        - `ecosystem.profile.yaml`: stack preferences
+        - `deploy.targets.json`: local and cloud deployment targets
 
         ## Secrets
         Do not commit `.env`. Export secrets in your shell or configure them in the deployment provider.
@@ -1955,6 +2258,8 @@ def deployment_doc(platform: Path) -> str:
         "Deployment",
         f"""
         ## Recommended POC Deployment
+        Start with `deploy.targets.json` for machine-readable deployment intent.
+
         - Frontend: Vercel
         - Backend: AWS Lambda + API Gateway, ECS Fargate, or App Runner
         - Database: Neon Postgres or Supabase Postgres

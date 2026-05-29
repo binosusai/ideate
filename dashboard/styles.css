@@ -879,13 +879,38 @@ body {
   border: 1px solid rgba(69, 65, 56, 0.07);
 }
 
-.artifact-preview h5 {
-  margin-bottom: 0.35rem;
+.artifact-preview summary {
+  display: grid;
+  gap: 0.3rem;
+  cursor: pointer;
+}
+
+.artifact-preview summary span {
   font-size: 1rem;
+  font-weight: 800;
   text-transform: capitalize;
 }
 
-.artifact-preview p,
+.artifact-preview summary small {
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.artifact-preview pre {
+  max-height: 34rem;
+  overflow: auto;
+  margin-top: 0.85rem;
+  padding: 0.85rem;
+  border-radius: 0.7rem;
+  background: rgba(28, 31, 35, 0.92);
+  color: #f6f1e8;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
 .decision-list span {
   color: var(--ink-soft);
   font-size: 0.86rem;
@@ -926,7 +951,7 @@ body {
 
 .pending-item {
   display: grid;
-  gap: 0.18rem;
+  gap: 0.22rem;
   min-width: min(18rem, 100%);
   border: 1px solid rgba(69, 65, 56, 0.09);
   border-radius: 0.9rem;
@@ -937,6 +962,14 @@ body {
   text-align: left;
   cursor: pointer;
   transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.pending-item small {
+  color: var(--terracotta);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
 }
 
 .pending-item:hover {
@@ -1734,5 +1767,537 @@ body[data-mode='boardroom'] .mini-note p {
     width: 1rem;
     height: 2px;
     transform: none;
+  }
+}
+
+/* Observatory product surface */
+:root {
+  --obs-paper: #f7f4ee;
+  --obs-ink: #172025;
+  --obs-ink-soft: #58656a;
+  --obs-panel: rgba(255, 252, 245, 0.88);
+  --obs-panel-strong: rgba(255, 253, 248, 0.96);
+  --obs-line: rgba(23, 32, 37, 0.12);
+  --obs-brass: #b28b39;
+  --obs-green: #2f6d59;
+  --obs-cyan: #1d8793;
+  --obs-red: #9f4b3f;
+  --obs-graphite: #202a30;
+}
+
+body {
+  background:
+    linear-gradient(180deg, rgba(247, 244, 238, 0.98), rgba(231, 235, 226, 0.92)),
+    #f7f4ee;
+  color: var(--obs-ink);
+}
+
+.observatory-backdrop {
+  background:
+    radial-gradient(ellipse at 18% 8%, rgba(178, 139, 57, 0.12), transparent 34%),
+    radial-gradient(ellipse at 82% 16%, rgba(29, 135, 147, 0.11), transparent 36%),
+    linear-gradient(145deg, rgba(247, 244, 238, 0.9), rgba(225, 230, 220, 0.78));
+}
+
+.paper-backdrop::before {
+  opacity: 0;
+}
+
+.signal-grid {
+  position: absolute;
+  inset: 0;
+  opacity: 0.46;
+  background-image:
+    linear-gradient(rgba(23, 32, 37, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(23, 32, 37, 0.035) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, 0.72) 54%, transparent 100%);
+}
+
+.orbital-ring {
+  position: absolute;
+  border: 1px solid rgba(23, 32, 37, 0.08);
+  border-radius: 50%;
+  transform: rotate(-14deg);
+}
+
+.ring-a {
+  width: 42rem;
+  height: 18rem;
+  top: 8rem;
+  right: -10rem;
+}
+
+.ring-b {
+  width: 32rem;
+  height: 13rem;
+  top: 15rem;
+  right: -5rem;
+  border-color: rgba(29, 135, 147, 0.13);
+}
+
+.ring-c {
+  width: 28rem;
+  height: 10rem;
+  left: -8rem;
+  bottom: 9rem;
+  border-color: rgba(178, 139, 57, 0.12);
+}
+
+.signal-beam {
+  position: absolute;
+  inset: 0;
+  opacity: 0.42;
+  background:
+    linear-gradient(115deg, transparent 0 37%, rgba(255, 255, 255, 0.5) 45%, transparent 56%),
+    linear-gradient(90deg, transparent, rgba(47, 109, 89, 0.08), transparent);
+  animation: observatory-scan 12s ease-in-out infinite;
+}
+
+.topbar-inner,
+.card,
+.queue-panel,
+.detail-panel,
+.pending-strip,
+.flow-step,
+.crew-branch,
+.crew-agent-card,
+.agent-tree-wrap,
+.artifact-preview {
+  border-radius: 8px;
+  border-color: var(--obs-line);
+  background: var(--obs-panel);
+  box-shadow: 0 18px 46px rgba(28, 34, 28, 0.08);
+}
+
+.topbar-inner {
+  border-radius: 16px;
+  background: rgba(255, 253, 248, 0.84);
+}
+
+.brand-seal {
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, var(--obs-graphite), #344249);
+}
+
+.brand-dot {
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 3px;
+  background: linear-gradient(135deg, var(--obs-brass), var(--obs-cyan));
+}
+
+.topbar-nav,
+.mode-switch,
+.topbar-chip,
+.updated-label {
+  border-radius: 8px;
+}
+
+.nav-link,
+.mode-btn,
+.hero-button,
+.icon-action,
+.status-badge,
+.detail-meta span,
+.signal-tags span {
+  border-radius: 6px;
+}
+
+.nav-link:hover,
+.nav-link.is-active,
+.mode-btn.is-active,
+.mode-btn[aria-pressed='true'] {
+  background: rgba(178, 139, 57, 0.13);
+}
+
+.observatory-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.02fr) minmax(24rem, 0.88fr);
+  gap: 1rem;
+  min-height: min(720px, calc(100dvh - 9rem));
+  align-items: stretch;
+}
+
+.card-hero {
+  display: grid;
+  align-content: center;
+  padding: clamp(1.4rem, 3vw, 3.2rem);
+  background:
+    linear-gradient(180deg, rgba(255, 253, 248, 0.94), rgba(244, 241, 232, 0.9));
+}
+
+.card-hero::before,
+.card-hero::after {
+  display: none;
+}
+
+.hero-eyebrow,
+.section-kicker,
+.crew-branch-kicker,
+.crew-leader-topline {
+  color: var(--obs-cyan);
+}
+
+.hero-title {
+  max-width: 12ch;
+  letter-spacing: 0;
+  font-size: clamp(3.2rem, 6vw, 6.9rem);
+}
+
+.hero-text {
+  color: var(--obs-ink);
+  font-size: clamp(1rem, 1.3vw, 1.18rem);
+}
+
+.hero-narrative {
+  color: var(--obs-ink-soft);
+}
+
+.signal-console {
+  display: grid;
+  gap: 0.8rem;
+  margin-top: 1.8rem;
+  max-width: 48rem;
+}
+
+.signal-label {
+  font-family: var(--font-mono);
+  color: var(--obs-brass);
+  font-size: 0.74rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.signal-console textarea {
+  width: 100%;
+  min-height: 9.5rem;
+  resize: vertical;
+  border: 1px solid rgba(23, 32, 37, 0.14);
+  border-radius: 8px;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.68);
+  color: var(--obs-ink);
+  font: inherit;
+  font-size: 1rem;
+  outline: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.signal-console .blueprint-editor {
+  min-height: 14rem;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.signal-console textarea:focus {
+  border-color: rgba(29, 135, 147, 0.42);
+  box-shadow: 0 0 0 3px rgba(29, 135, 147, 0.12);
+}
+
+.signal-console-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.signal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.blueprint-status {
+  min-height: 1.5rem;
+  color: var(--obs-ink-soft);
+  font-size: 0.86rem;
+}
+
+.blueprint-status[data-tone='success'] {
+  color: var(--obs-green);
+}
+
+.blueprint-status[data-tone='warn'] {
+  color: #7e5d18;
+}
+
+.blueprint-status[data-tone='error'] {
+  color: var(--obs-red);
+}
+
+.signal-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.signal-tags span {
+  padding: 0.42rem 0.55rem;
+  border: 1px solid rgba(23, 32, 37, 0.09);
+  background: rgba(255, 255, 255, 0.54);
+  color: var(--obs-ink-soft);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.hero-button.primary,
+.icon-action.primary {
+  background: var(--obs-graphite);
+  color: #fffaf0;
+  border: 1px solid rgba(23, 32, 37, 0.26);
+  box-shadow: 0 12px 22px rgba(23, 32, 37, 0.12);
+}
+
+.hero-button.secondary,
+.icon-action {
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.blueprint-dossier {
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  gap: 1rem;
+  min-height: 100%;
+  padding: clamp(1.1rem, 2vw, 1.6rem);
+  border: 1px solid var(--obs-line);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(32, 42, 48, 0.96), rgba(21, 29, 34, 0.97));
+  color: #f8f3e8;
+  box-shadow: 0 24px 70px rgba(23, 32, 37, 0.18);
+  overflow: hidden;
+  position: relative;
+}
+
+.blueprint-dossier::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0.16;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+.blueprint-dossier > * {
+  position: relative;
+  z-index: 1;
+}
+
+.dossier-topline {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  color: rgba(248, 243, 232, 0.68);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.dossier-topline strong {
+  color: #d7b65f;
+}
+
+.dossier-title {
+  max-width: 14ch;
+  font-family: var(--font-display);
+  font-size: clamp(2.2rem, 3.7vw, 4.4rem);
+  line-height: 0.96;
+  letter-spacing: 0;
+}
+
+.dossier-grid {
+  display: grid;
+  gap: 0.7rem;
+  align-content: start;
+}
+
+.dossier-cell {
+  padding: 0.85rem;
+  border: 1px solid rgba(248, 243, 232, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.055);
+  animation: rise-in 0.5s ease both;
+}
+
+.dossier-cell span {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: #8fd0d6;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.dossier-cell p {
+  color: rgba(248, 243, 232, 0.86);
+  font-size: 0.92rem;
+}
+
+.mission-track {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.35rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid rgba(248, 243, 232, 0.13);
+}
+
+.capsule-readiness {
+  display: grid;
+  gap: 0.45rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid rgba(248, 243, 232, 0.13);
+}
+
+.capsule-title {
+  color: rgba(248, 243, 232, 0.68);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.capsule-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid rgba(248, 243, 232, 0.08);
+}
+
+.capsule-row span {
+  color: rgba(248, 243, 232, 0.58);
+  font-size: 0.78rem;
+}
+
+.capsule-row strong {
+  overflow-wrap: anywhere;
+  color: rgba(248, 243, 232, 0.9);
+  font-size: 0.78rem;
+  text-align: right;
+}
+
+.mission-step {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.mission-step span {
+  color: rgba(248, 243, 232, 0.42);
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+}
+
+.mission-step strong {
+  overflow-wrap: anywhere;
+  color: rgba(248, 243, 232, 0.54);
+  font-size: 0.72rem;
+}
+
+.mission-step.is-lit strong,
+.mission-step.is-lit span {
+  color: #d7b65f;
+}
+
+.observatory-flow .flow-step {
+  min-height: 12rem;
+  background: rgba(255, 253, 248, 0.78);
+}
+
+.flow-step::after {
+  background: linear-gradient(90deg, var(--obs-brass), var(--obs-cyan), var(--obs-green));
+}
+
+.stat-card {
+  border-radius: 8px;
+  transform: none;
+}
+
+.status-badge {
+  color: var(--obs-cyan);
+  background: rgba(29, 135, 147, 0.12);
+}
+
+.status-approved {
+  color: var(--obs-green);
+  background: rgba(47, 109, 89, 0.13);
+}
+
+.status-planned,
+.status-pending_review {
+  color: #7e5d18;
+  background: rgba(178, 139, 57, 0.15);
+}
+
+.status-revise {
+  color: var(--obs-red);
+  background: rgba(159, 75, 63, 0.12);
+}
+
+.artifact-preview pre {
+  border-radius: 8px;
+  background: #172025;
+}
+
+body[data-mode='cinematic'] .observatory-backdrop {
+  background:
+    radial-gradient(ellipse at 18% 8%, rgba(178, 139, 57, 0.15), transparent 34%),
+    radial-gradient(ellipse at 82% 16%, rgba(29, 135, 147, 0.14), transparent 36%),
+    linear-gradient(145deg, rgba(247, 244, 238, 0.9), rgba(225, 230, 220, 0.8));
+}
+
+body[data-mode='boardroom'] .blueprint-dossier {
+  background: linear-gradient(180deg, #263138, #172025);
+}
+
+@keyframes observatory-scan {
+  0%, 100% { transform: translateX(-8%); }
+  50% { transform: translateX(8%); }
+}
+
+@media (max-width: 1080px) {
+  .observatory-hero {
+    grid-template-columns: 1fr;
+    min-height: auto;
+  }
+
+  .blueprint-dossier {
+    min-height: 34rem;
+  }
+}
+
+@media (max-width: 720px) {
+  .observatory-hero {
+    gap: 1rem;
+  }
+
+  .hero-title {
+    font-size: 3.15rem;
+  }
+
+  .signal-console-footer {
+    align-items: stretch;
+  }
+
+  .signal-actions,
+  .signal-console-footer .hero-button {
+    width: 100%;
+  }
+
+  .mission-track {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .dossier-title {
+    font-size: 2.45rem;
   }
 }

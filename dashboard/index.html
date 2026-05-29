@@ -14,14 +14,12 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <div class="paper-backdrop" aria-hidden="true">
-      <div class="wash wash-peach"></div>
-      <div class="wash wash-mint"></div>
-      <div class="wash wash-blue"></div>
-      <div class="wash wash-rose"></div>
-      <div class="scribble scribble-a"></div>
-      <div class="scribble scribble-b"></div>
-      <div class="scribble scribble-c"></div>
+    <div class="paper-backdrop observatory-backdrop" aria-hidden="true">
+      <div class="signal-grid"></div>
+      <div class="orbital-ring ring-a"></div>
+      <div class="orbital-ring ring-b"></div>
+      <div class="orbital-ring ring-c"></div>
+      <div class="signal-beam"></div>
     </div>
 
     <header class="topbar">
@@ -31,12 +29,12 @@
             <span class="brand-dot"></span>
           </div>
           <div>
-            <p class="brand-kicker">ideate studio</p>
-            <h1 class="brand-name">Crew Dashboard</h1>
+            <p class="brand-kicker">ideate observatory</p>
+            <h1 class="brand-name">Signal Studio</h1>
           </div>
         </div>
         <nav class="topbar-nav" aria-label="Primary">
-          <a class="nav-link is-active" href="index.html">Home</a>
+          <a class="nav-link is-active" href="index.html">Observatory</a>
           <a class="nav-link" href="contact.html">Contact Us</a>
           <a class="nav-link" href="https://github.com/binosusai/ideate/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">Contributing</a>
         </nav>
@@ -46,42 +44,58 @@
           <button class="mode-btn" type="button" data-mode="boardroom">Boardroom</button>
         </div>
         <div class="topbar-meta">
-          <span class="topbar-chip">Investor presentation mode</span>
-          <span class="topbar-chip muted">Auth layer later</span>
+          <span class="topbar-chip">Blueprint phase</span>
+          <span class="topbar-chip muted">Minions later</span>
           <span class="updated-label" id="updated-label"></span>
         </div>
       </div>
     </header>
 
     <main class="page-shell">
-      <section class="hero-grid">
+      <section class="observatory-hero">
         <div class="hero-copy card card-hero">
           <p class="hero-eyebrow" id="hero-eyebrow"></p>
           <h2 class="hero-title" id="hero-title"></h2>
           <p class="hero-text" id="hero-text"></p>
           <p class="hero-narrative" id="hero-narrative"></p>
-          <div class="hero-actions">
-            <a class="hero-button primary" href="contact.html">Contact Us</a>
-            <a class="hero-button secondary" href="https://github.com/binosusai/ideate/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">Read Contributing Guide</a>
-          </div>
-          <div class="hero-callouts">
-            <div class="hero-callout">
-              <span>What this shows</span>
-              <strong>CLI hierarchy, specialist roles, clean handoffs</strong>
+          <form class="signal-console" id="signal-console">
+            <label class="signal-label" for="idea-signal">Founder signal</label>
+            <textarea id="idea-signal" rows="5" placeholder="A local-first tool that turns contractor quotes into clean comparisons and negotiation notes."></textarea>
+            <label class="signal-label" for="blueprint-editor">Blueprint draft</label>
+            <textarea id="blueprint-editor" class="blueprint-editor" rows="10" spellcheck="false"></textarea>
+            <div class="signal-console-footer">
+              <div class="signal-tags" aria-label="Blueprint dimensions">
+                <span>Problem</span>
+                <span>User</span>
+                <span>MVP</span>
+                <span>Risks</span>
+                <span>POC</span>
+              </div>
+              <div class="signal-actions">
+                <button class="hero-button secondary" id="validate-blueprint" type="button">Validate</button>
+                <button class="hero-button secondary" id="create-idea" type="button">Create idea</button>
+                <button class="hero-button primary" type="submit">Draft blueprint</button>
+              </div>
             </div>
-            <div class="hero-callout accent">
-              <span>What this hides</span>
-              <strong>Sprint-board mechanics and implementation noise</strong>
-            </div>
-          </div>
+            <p class="blueprint-status" id="blueprint-status"></p>
+          </form>
         </div>
-        <aside class="hero-stats" id="summary-stats"></aside>
+        <aside class="blueprint-dossier" aria-label="Blueprint dossier">
+          <div class="dossier-topline">
+            <span>Blueprint dossier</span>
+            <strong id="dossier-state">Ready</strong>
+          </div>
+          <div class="dossier-title" id="dossier-title">Untitled signal</div>
+          <div class="dossier-grid" id="dossier-grid"></div>
+          <div class="mission-track" id="mission-track"></div>
+          <div class="capsule-readiness" id="capsule-readiness"></div>
+        </aside>
       </section>
 
-      <section class="flow-panel card">
+      <section class="flow-panel card observatory-flow">
         <div class="section-head">
-          <p class="section-kicker">Operating rhythm</p>
-          <h3>How work moves through the crew</h3>
+          <p class="section-kicker">Expedition path</p>
+          <h3>From rough thought to accepted prototype</h3>
         </div>
         <div class="flow-rail" id="flow-rail"></div>
       </section>
@@ -89,8 +103,8 @@
       <section class="control-plane card" id="approval-board">
         <div class="section-head control-head">
           <div>
-            <p class="section-kicker">Sprint board</p>
-            <h3>Idea approvals and POC reviews</h3>
+            <p class="section-kicker">Mission control</p>
+            <h3>Signals, proposals, and POC reviews</h3>
           </div>
           <div class="auth-strip">
             <input id="admin-token" class="token-input" type="password" autocomplete="off" placeholder="Admin token" />
@@ -143,7 +157,7 @@
 
         <div class="pending-strip">
           <div class="pending-head">
-            <p class="section-kicker">Pending reviews</p>
+            <p class="section-kicker">Pending approvals</p>
             <span id="pending-count">0 waiting</span>
           </div>
           <div class="pending-list" id="pending-review-list"></div>
@@ -185,7 +199,7 @@
       </div>
     </footer>
 
-    <script src="theme.js"></script>
-    <script src="app.js"></script>
+    <script src="theme.js?v=20260527-observatory"></script>
+    <script src="app.js?v=20260527-observatory"></script>
   </body>
 </html>

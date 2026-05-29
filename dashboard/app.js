@@ -1,11 +1,11 @@
 'use strict';
 
 const crewData = {
-  crewName: 'Ideate Investor Studio',
-  crewTagline: 'A clear view of how specialized agents turn raw opportunities into decisions, prototypes, and launch-ready handoffs.',
-  updateLabel: 'CLI agent map',
+  crewName: 'Ideate Observatory',
+  crewTagline: 'A quiet product studio where rough signals become blueprints, proposals, prototypes, and execution-ready handoffs.',
+  updateLabel: 'Phase 1',
   narrative:
-    'This dashboard shows the predefined Ideate CLI agent structure: each idea moves through staged crews, coordinator synthesis, approval gates, and prototype handoff.',
+    'Draft the signal, shape the blueprint, then let the Ideate crew pressure-test the work before anything graduates to Minions.',
   stats: [
     { value: '19', label: 'predefined agents', note: 'wired into CLI stages' },
     { value: '06', label: 'workflow stages', note: 'research through handoff' },
@@ -13,16 +13,16 @@ const crewData = {
   ],
   flow: [
     {
-      label: 'Intake',
-      detail: 'Founder signal, market pull, or operator request enters the crew.',
+      label: 'Signal',
+      detail: 'A one-line opportunity enters the observatory and becomes structured product intent.',
     },
     {
-      label: 'Synthesis',
-      detail: 'Research and debate agents compress ambiguity into structured options.',
+      label: 'Blueprint',
+      detail: 'AI expands the idea into problem, users, MVP, risks, metrics, and open questions.',
     },
     {
-      label: 'Delivery',
-      detail: 'Planning, build, review, and handoff produce a boardroom-ready package.',
+      label: 'Expedition',
+      detail: 'Research, debate, planning, proposal, POC, and review unlock the next phase.',
     },
   ],
   hierarchy: {
@@ -314,6 +314,17 @@ const ideaList = document.getElementById('idea-list');
 const ideaDetail = document.getElementById('idea-detail');
 const pendingReviewList = document.getElementById('pending-review-list');
 const pendingCount = document.getElementById('pending-count');
+const signalConsole = document.getElementById('signal-console');
+const ideaSignal = document.getElementById('idea-signal');
+const dossierState = document.getElementById('dossier-state');
+const dossierTitle = document.getElementById('dossier-title');
+const dossierGrid = document.getElementById('dossier-grid');
+const missionTrack = document.getElementById('mission-track');
+const blueprintEditor = document.getElementById('blueprint-editor');
+const validateBlueprintButton = document.getElementById('validate-blueprint');
+const createIdeaButton = document.getElementById('create-idea');
+const blueprintStatus = document.getElementById('blueprint-status');
+const capsuleReadiness = document.getElementById('capsule-readiness');
 
 const boardState = {
   token: sessionStorage.getItem('ideate.dashboard.token') || '',
@@ -324,12 +335,197 @@ const boardState = {
   loading: false,
 };
 
+const defaultSignal = 'A local-first tool that turns contractor quotes into clean comparisons and negotiation notes.';
+
+const dossierFields = [
+  ['problem', 'Messy quotes are hard to compare because scope, exclusions, timing, and pricing are hidden in different formats.'],
+  ['target user', 'Homeowners and small property managers choosing between local contractors.'],
+  ['mvp', 'Paste three quotes, normalize line items, flag gaps, and generate negotiation questions.'],
+  ['risk', 'Quote formats vary wildly, so the first POC should use guided extraction and editable fields.'],
+];
+
+const missionStages = [
+  'Signal',
+  'Blueprint',
+  'Research',
+  'Debate',
+  'Proposal',
+  'POC',
+  'Minions',
+];
+
+let currentBlueprint = null;
+
 function escapeHtml(value) {
   return String(value)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function signalTitle(text) {
+  const cleaned = String(text || '').trim();
+  if (!cleaned) return 'Untitled signal';
+  const words = cleaned
+    .replace(/[^\w\s-]/g, '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 7);
+  if (!words.length) return 'Untitled signal';
+  return words
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+}
+
+function inferDossier(text) {
+  const value = String(text || defaultSignal).trim();
+  const lower = value.toLowerCase();
+  const user = lower.includes('developer') || lower.includes('agent')
+    ? 'Builders and technical operators who need repeatable agent-backed execution.'
+    : lower.includes('invoice')
+      ? 'Independent consultants and agencies managing client follow-up.'
+      : lower.includes('contractor')
+        ? 'Homeowners and property managers comparing high-stakes local services.'
+        : 'Focused operators with a repeated workflow that needs a sharper first version.';
+
+  const mvp = lower.includes('github') || lower.includes('oss')
+    ? 'Ingest candidate work, rank the best opportunity, and produce an implementation-ready brief.'
+    : lower.includes('proxy') || lower.includes('api')
+      ? 'Create a local ledger, enforce no-fly zones, and export a portable handoff bundle.'
+      : 'Capture the workflow, create one useful output, and keep every field editable before proposal generation.';
+
+  return [
+    ['problem', value],
+    ['target user', user],
+    ['mvp', mvp],
+    ['risk', 'The POC must prove one meaningful before/after instead of presenting polished agent theater.'],
+  ];
+}
+
+function fallbackBlueprint(text) {
+  const fields = inferDossier(text);
+  return {
+    title: signalTitle(text),
+    category: 'money',
+    why: String(text || defaultSignal).trim(),
+    details: {
+      domain: fields.find(([label]) => label === 'target user')?.[1] || 'workflow productivity',
+      problem: { statement: String(text || defaultSignal).trim() },
+      target_users: ['builders', 'operators'],
+      use_cases: [{ name: 'First useful workflow', flow: ['capture', 'normalize', 'review', 'run POC'] }],
+      technology: {},
+      constraints: ['local-first by default', 'no paid services required for the first POC'],
+      mvp: { must_have: ['blueprint preview', 'runnable local POC', 'deployment path'] },
+      acceptance_criteria: ['POC runs locally', 'deployment path is documented'],
+      success_metrics: ['local run completion', 'POC acceptance'],
+      monetization: { model: 'free first, paid execution upgrades later' },
+      differentiation: ['runnable POC capsule instead of static AI text'],
+      risks: ['over-polishing before proving the core workflow'],
+      open_questions: ['Which integration is mandatory first?'],
+      ecosystem: {
+        frontend: 'static-html',
+        backend: 'python-stdlib-api',
+        database: 'sqlite-local',
+        auth: 'none-local',
+        deploy: {
+          frontend: 'vercel-static',
+          backend: 'aws-python-api',
+          database: 'neon-postgres',
+        },
+        repo: 'github',
+        project_management: 'github-projects',
+      },
+    },
+  };
+}
+
+function blueprintToDossierFields(blueprint) {
+  const details = blueprint && blueprint.details ? blueprint.details : {};
+  const problem = details.problem && typeof details.problem === 'object'
+    ? details.problem.statement || JSON.stringify(details.problem)
+    : details.problem || blueprint.why || '';
+  const users = Array.isArray(details.target_users) ? details.target_users.join(', ') : '';
+  const mvp = details.mvp && typeof details.mvp === 'object'
+    ? (details.mvp.must_have || details.mvp.scope || JSON.stringify(details.mvp))
+    : details.mvp || '';
+  const risk = Array.isArray(details.risks) ? details.risks[0] : details.risks || '';
+  return [
+    ['problem', problem],
+    ['target user', users || 'Focused operators with repeated workflows.'],
+    ['mvp', Array.isArray(mvp) ? mvp.join(', ') : String(mvp || 'One useful local workflow.')],
+    ['risk', String(risk || 'The POC must prove a meaningful before/after.')],
+  ];
+}
+
+function setBlueprintStatus(message, tone = 'neutral') {
+  if (!blueprintStatus) return;
+  blueprintStatus.textContent = message || '';
+  blueprintStatus.dataset.tone = tone;
+}
+
+function setCurrentBlueprint(blueprint, source = 'draft') {
+  currentBlueprint = blueprint;
+  if (blueprintEditor) {
+    blueprintEditor.value = JSON.stringify(blueprint, null, 2);
+  }
+  renderDossier(blueprintToDossierFields(blueprint), blueprint.title || 'Untitled signal');
+  renderCapsuleReadiness(blueprint);
+  setBlueprintStatus(`Blueprint ready (${source}).`, source.includes('fallback') ? 'warn' : 'success');
+}
+
+function parseEditorBlueprint() {
+  if (!blueprintEditor) return currentBlueprint;
+  try {
+    return JSON.parse(blueprintEditor.value || '{}');
+  } catch (error) {
+    setBlueprintStatus(`Blueprint JSON is invalid: ${error.message}`, 'error');
+    return null;
+  }
+}
+
+function renderCapsuleReadiness(blueprint) {
+  if (!capsuleReadiness) return;
+  const ecosystem = blueprint && blueprint.details && blueprint.details.ecosystem ? blueprint.details.ecosystem : {};
+  const deploy = ecosystem.deploy || {};
+  const items = [
+    ['Local runner', 'run-local.sh'],
+    ['Smoke check', 'scripts/smoke_check.py'],
+    ['Frontend', ecosystem.frontend || 'static-html'],
+    ['Backend', ecosystem.backend || 'python-stdlib-api'],
+    ['Deploy', [deploy.frontend, deploy.backend, deploy.database].filter(Boolean).join(' + ') || 'vercel + aws + neon'],
+  ];
+  capsuleReadiness.innerHTML = `
+    <div class="capsule-title">POC capsule readiness</div>
+    ${items.map(([label, value]) => `
+      <div class="capsule-row">
+        <span>${escapeHtml(label)}</span>
+        <strong>${escapeHtml(value)}</strong>
+      </div>
+    `).join('')}
+  `;
+}
+
+function renderDossier(fields = dossierFields, title = 'Contractor Quote Comparison') {
+  if (!dossierGrid || !missionTrack || !dossierTitle || !dossierState) return;
+  dossierTitle.textContent = title;
+  dossierState.textContent = 'Blueprint draft';
+  dossierGrid.innerHTML = fields
+    .map(([label, detail], index) => `
+      <article class="dossier-cell" style="animation-delay:${index * 70}ms">
+        <span>${escapeHtml(label)}</span>
+        <p>${escapeHtml(detail)}</p>
+      </article>
+    `)
+    .join('');
+  missionTrack.innerHTML = missionStages
+    .map((stage, index) => `
+      <div class="mission-step${index < 2 ? ' is-lit' : ''}">
+        <span>${String(index + 1).padStart(2, '0')}</span>
+        <strong>${escapeHtml(stage)}</strong>
+      </div>
+    `)
+    .join('');
 }
 
 function statCard(stat) {
@@ -414,12 +610,12 @@ function renderOrgTree() {
 
 function renderDashboard() {
   heroEyebrow.textContent = crewData.crewName;
-  heroTitle.textContent = 'A hierarchical map of the Ideate CLI agent crew';
+  heroTitle.textContent = 'Turn a rough idea into a serious blueprint';
   heroText.textContent = crewData.crewTagline;
   heroNarrative.textContent = crewData.narrative;
   updatedLabel.textContent = crewData.updateLabel;
 
-  summaryStats.innerHTML = crewData.stats.map(statCard).join('');
+  if (summaryStats) summaryStats.innerHTML = crewData.stats.map(statCard).join('');
   flowRail.innerHTML = crewData.flow.map(flowStep).join('');
   principleList.innerHTML = crewData.principles
     .map((principle) => `<li>${escapeHtml(principle)}</li>`)
@@ -448,9 +644,68 @@ function renderDashboard() {
       ${crewData.hierarchy.branches.map(branchCard).join('')}
     </div>
   `;
+  renderDossier();
+  setCurrentBlueprint(fallbackBlueprint(defaultSignal), 'static draft');
 }
 
 renderDashboard();
+
+function initSignalConsole() {
+  if (!signalConsole || !ideaSignal) return;
+  ideaSignal.value = defaultSignal;
+  signalConsole.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const text = ideaSignal.value.trim() || defaultSignal;
+    setBlueprintStatus('Generating blueprint...', 'neutral');
+    try {
+      const payload = await apiFetch('/api/blueprints/generate', {
+        method: 'POST',
+        body: JSON.stringify({ signal: text }),
+      });
+      setCurrentBlueprint(payload.blueprint, payload.source || 'api');
+    } catch (error) {
+      setCurrentBlueprint(fallbackBlueprint(text), 'static fallback');
+      setBlueprintStatus(`${boardErrorMessage(error)} Using local draft preview.`, 'warn');
+    }
+  });
+
+  if (validateBlueprintButton) {
+    validateBlueprintButton.addEventListener('click', async () => {
+      const blueprint = parseEditorBlueprint();
+      if (!blueprint) return;
+      setBlueprintStatus('Validating blueprint...', 'neutral');
+      try {
+        const payload = await apiFetch('/api/blueprints/validate', {
+          method: 'POST',
+          body: JSON.stringify({ blueprint }),
+        });
+        setCurrentBlueprint(payload.blueprint, 'validated');
+      } catch (error) {
+        setBlueprintStatus(boardErrorMessage(error), 'error');
+      }
+    });
+  }
+
+  if (createIdeaButton) {
+    createIdeaButton.addEventListener('click', async () => {
+      const blueprint = parseEditorBlueprint();
+      if (!blueprint) return;
+      setBlueprintStatus('Creating idea...', 'neutral');
+      try {
+        const payload = await apiFetch('/api/ideas/create', {
+          method: 'POST',
+          body: JSON.stringify({ blueprint }),
+        });
+        setBlueprintStatus(`Idea created: ${payload.idea.title}`, 'success');
+        await loadBoard({ selectFirst: true });
+      } catch (error) {
+        setBlueprintStatus(boardErrorMessage(error), 'error');
+      }
+    });
+  }
+}
+
+initSignalConsole();
 
 function statusBadge(value) {
   const label = String(value || 'new').replace(/_/g, ' ');
@@ -461,6 +716,29 @@ function setBoardStatus(message, tone = 'neutral') {
   if (!boardStatus) return;
   boardStatus.textContent = message || '';
   boardStatus.dataset.tone = tone;
+}
+
+function boardErrorMessage(error) {
+  if (error && error.code === 'auth_not_configured') {
+    return 'Server is missing IDEATE_DASHBOARD_ADMIN_TOKEN. Export it in the same terminal that starts the dashboard, then restart npm run start:vercel.';
+  }
+  if (error && error.code === 'database_not_configured') {
+    return 'Server is missing DATABASE_URL. Export it in the same terminal that starts the dashboard, then restart npm run start:vercel.';
+  }
+  if (error && error.code === 'github_repo_not_configured') {
+    return 'GitHub repository is not configured. Set IDEATE_TASKS_REPO or GITHUB_REPOSITORY for the dashboard server.';
+  }
+  if (error && error.code === 'github_token_not_configured') {
+    return 'GitHub token is not configured. Set GH_TOKEN or GITHUB_TOKEN for the dashboard server.';
+  }
+  if (error && error.code === 'github_dispatch_failed') {
+    return error.message;
+  }
+  if (error && error.status === 401) {
+    const path = error.path ? ` for ${error.path}` : '';
+    return `Dashboard authorization required${path}. Paste the same admin token that the server was started with.`;
+  }
+  return error && error.message ? error.message : 'Dashboard request failed.';
 }
 
 function authHeaders() {
@@ -486,6 +764,7 @@ async function apiFetch(path, options = {}) {
     const error = new Error(message);
     error.status = response.status;
     error.code = payload.code;
+    error.path = path;
     throw error;
   }
   return payload;
@@ -525,21 +804,79 @@ function renderIdeaRows() {
 }
 
 function artifactPreview(artifacts) {
-  const entries = Object.entries(artifacts || {});
+  const normalizedArtifacts = withProposalArtifact(boardState.selectedDetail && boardState.selectedDetail.idea, artifacts);
+  const artifactOrder = [
+    'proposal',
+    'openspec_proposal',
+    'plan',
+    'research',
+    'debate',
+    'openspec_design',
+    'openspec_tasks',
+    'openspec_spec',
+    'poc_report',
+    'poc_quality_score',
+    'poc_improvement_loop',
+    'handoff',
+  ];
+  const entries = Object.entries(normalizedArtifacts || {}).sort(([left], [right]) => {
+    const leftIndex = artifactOrder.includes(left) ? artifactOrder.indexOf(left) : artifactOrder.length;
+    const rightIndex = artifactOrder.includes(right) ? artifactOrder.indexOf(right) : artifactOrder.length;
+    return leftIndex - rightIndex || left.localeCompare(right);
+  });
   if (!entries.length) {
     return '<p class="detail-muted">No artifacts stored for this idea yet.</p>';
   }
   return entries
     .map(([kind, artifact]) => {
-      const text = String(artifact.content || '').slice(0, 360);
+      const text = String(artifact.content || '');
+      const preview = text.slice(0, 220).replace(/\s+/g, ' ').trim();
+      const label = kind === 'openspec_proposal' ? 'proposal' : kind.replace(/_/g, ' ');
+      const open = kind === 'proposal' || kind === 'openspec_proposal' ? ' open' : '';
       return `
-        <article class="artifact-preview">
-          <h5>${escapeHtml(kind.replace(/_/g, ' '))}</h5>
-          <p>${escapeHtml(text)}${artifact.content && artifact.content.length > 360 ? '...' : ''}</p>
-        </article>
+        <details class="artifact-preview"${open}>
+          <summary>
+            <span>${escapeHtml(label)}</span>
+            <small>${escapeHtml(preview)}${text.length > 220 ? '...' : ''}</small>
+          </summary>
+          <pre>${escapeHtml(text)}</pre>
+        </details>
       `;
     })
     .join('');
+}
+
+function artifactContent(artifacts, kind) {
+  return artifacts && artifacts[kind] && artifacts[kind].content ? String(artifacts[kind].content) : '';
+}
+
+function withProposalArtifact(idea, artifacts) {
+  const out = { ...(artifacts || {}) };
+  if (out.proposal || out.openspec_proposal) return out;
+
+  const research = artifactContent(out, 'research');
+  const debate = artifactContent(out, 'debate');
+  const plan = artifactContent(out, 'plan');
+  if (!research && !debate && !plan) return out;
+
+  const title = idea && idea.title ? idea.title : 'Selected idea';
+  const lines = [
+    `# Proposal: ${title}`,
+    '',
+    '## Approval Question',
+    'Approve this proposal to build the first POC for the idea.',
+    '',
+    '## Proposal Summary',
+    plan || 'No implementation plan artifact is available yet.',
+    research ? `\n## Research\n\n${research}` : '',
+    debate ? `\n## Debate\n\n${debate}` : '',
+  ].filter(Boolean);
+
+  out.proposal = {
+    content: lines.join('\n'),
+    created_at: idea && idea.updated_at ? idea.updated_at : '',
+  };
+  return out;
 }
 
 function decisionsPreview(decisions) {
@@ -571,8 +908,9 @@ function renderDetail() {
   }
 
   const idea = detail.idea;
-  const canApprovePlan = idea.status === 'planned';
-  const canReviewPoc = idea.review_status === 'pending_review';
+  const canStartPoc = idea.status === 'planned' || idea.status === 'approved';
+  const canReviewPoc = idea.review_status === 'pending_review' || (idea.status === 'poc' && idea.review_status === 'new');
+  const startPocLabel = idea.status === 'planned' ? 'Approve proposal & build POC' : 'Build POC';
 
   ideaDetail.innerHTML = `
     <div class="detail-top">
@@ -593,13 +931,13 @@ function renderDetail() {
     <div class="decision-controls">
       <textarea id="review-feedback" class="feedback-input" rows="4" placeholder="Feedback or rationale">${escapeHtml(idea.review_feedback || '')}</textarea>
       <div class="decision-actions">
-        <button class="icon-action primary" type="button" data-action="approve-plan" ${canApprovePlan ? '' : 'disabled'}>Approve idea</button>
+        <button class="icon-action primary" type="button" data-action="approve-plan" ${canStartPoc ? '' : 'disabled'}>${startPocLabel}</button>
         <button class="icon-action primary" type="button" data-action="approve-poc" ${canReviewPoc ? '' : 'disabled'}>Approve POC</button>
         <button class="icon-action danger" type="button" data-action="revise-poc" ${canReviewPoc ? '' : 'disabled'}>Request revision</button>
       </div>
     </div>
     <div class="detail-section">
-      <h5>Latest artifacts</h5>
+      <h5>Proposal and artifacts</h5>
       <div class="artifact-list">${artifactPreview(detail.artifacts)}</div>
     </div>
     <div class="detail-section">
@@ -611,19 +949,46 @@ function renderDetail() {
 
 function renderPendingReviews() {
   if (!pendingReviewList || !pendingCount) return;
-  pendingCount.textContent = `${boardState.pendingReviews.length} waiting`;
-  if (!boardState.pendingReviews.length) {
-    pendingReviewList.innerHTML = '<p class="detail-muted">No POCs are waiting for review.</p>';
+  const plannedApprovals = boardState.ideas.filter((idea) => idea.status === 'planned');
+  const staleReviews = boardState.ideas.filter((idea) => idea.status === 'poc' && idea.review_status === 'new');
+  const waitingCount = plannedApprovals.length + boardState.pendingReviews.length + staleReviews.length;
+  pendingCount.textContent = `${waitingCount} waiting`;
+  if (!waitingCount) {
+    pendingReviewList.innerHTML = '<p class="detail-muted">No planned ideas or POCs are waiting for approval.</p>';
     return;
   }
-  pendingReviewList.innerHTML = boardState.pendingReviews
+
+  const planItems = plannedApprovals
+    .map((idea) => `
+      <button class="pending-item" type="button" data-idea-id="${escapeHtml(idea.id)}">
+        <small>Awaiting POC approval</small>
+        <strong>${escapeHtml(idea.title)}</strong>
+        <span>${escapeHtml(idea.slug || '')}</span>
+      </button>
+    `)
+    .join('');
+
+  const reviewItems = boardState.pendingReviews
     .map((review) => `
       <button class="pending-item" type="button" data-idea-id="${escapeHtml(review.idea.id)}">
+        <small>POC awaiting review</small>
         <strong>${escapeHtml(review.idea.title)}</strong>
         <span>${escapeHtml(review.idea.slug || '')}</span>
       </button>
     `)
     .join('');
+
+  const staleReviewItems = staleReviews
+    .map((idea) => `
+      <button class="pending-item" type="button" data-idea-id="${escapeHtml(idea.id)}">
+        <small>POC awaiting review</small>
+        <strong>${escapeHtml(idea.title)}</strong>
+        <span>${escapeHtml(idea.slug || '')}</span>
+      </button>
+    `)
+    .join('');
+
+  pendingReviewList.innerHTML = planItems + reviewItems + staleReviewItems;
 }
 
 function boardQuery() {
@@ -670,7 +1035,7 @@ async function loadBoard({ selectFirst = false } = {}) {
     renderPendingReviews();
     renderDetail();
     const tone = error.status === 401 || error.status === 503 ? 'warn' : 'error';
-    setBoardStatus(error.message, tone);
+    setBoardStatus(boardErrorMessage(error), tone);
   } finally {
     boardState.loading = false;
   }
@@ -683,31 +1048,34 @@ async function mutateSelected(action) {
   const feedbackInput = document.getElementById('review-feedback');
   const feedback = feedbackInput ? feedbackInput.value.trim() : '';
 
-  setBoardStatus('Saving decision...', 'neutral');
+  setBoardStatus('Dispatching workflow...', 'neutral');
   try {
     if (action === 'approve-plan') {
-      await apiFetch(`/api/ideas/${ideaId}/approve`, {
+      await apiFetch(`/api/ideas/${ideaId}/start-poc`, {
         method: 'POST',
         body: JSON.stringify({ rationale: feedback }),
       });
     }
     if (action === 'approve-poc') {
-      await apiFetch(`/api/ideas/${ideaId}/review`, {
+      await apiFetch(`/api/ideas/${ideaId}/dispatch-review`, {
         method: 'POST',
         body: JSON.stringify({ decision: 'approve', feedback }),
       });
     }
     if (action === 'revise-poc') {
-      await apiFetch(`/api/ideas/${ideaId}/review`, {
+      await apiFetch(`/api/ideas/${ideaId}/dispatch-review`, {
         method: 'POST',
         body: JSON.stringify({ decision: 'revise', feedback }),
       });
     }
     await loadBoard();
     await loadIdeaDetail(ideaId);
-    setBoardStatus('Decision saved.', 'success');
+    const successMessage = action === 'approve-plan'
+      ? 'Proposal approved. POC workflow dispatched.'
+      : 'POC review workflow dispatched.';
+    setBoardStatus(successMessage, 'success');
   } catch (error) {
-    setBoardStatus(error.message, error.status === 409 ? 'warn' : 'error');
+    setBoardStatus(boardErrorMessage(error), error.status === 409 ? 'warn' : 'error');
   }
 }
 

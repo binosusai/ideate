@@ -1,6 +1,7 @@
 'use strict';
 
-const { HttpError } = require('./http');
+const { HttpError, sanitizeErrorMessage } = require('./http');
+const { normalizeBlueprint, slugify } = require('./blueprint');
 
 let pool;
 
@@ -23,13 +24,15 @@ function getPool() {
   return pool;
 }
 
-async function query(sql, params = []) {
+async function query(sql, params = [], operation = 'query') {
   try {
     return await getPool().query(sql, params);
   } catch (error) {
     console.error('[dashboard-api] database query failed', {
+      operation,
       code: error && error.code ? error.code : 'unknown',
       routine: error && error.routine ? error.routine : undefined,
+      message: error && error.message ? sanitizeErrorMessage(error.message) : 'Unknown error',
     });
     throw new HttpError(502, 'Dashboard database query failed.', 'database_query_failed');
   }
@@ -58,6 +61,7 @@ async function withTransaction(work) {
     console.error('[dashboard-api] transaction failed', {
       code: error && error.code ? error.code : 'unknown',
       routine: error && error.routine ? error.routine : undefined,
+      message: error && error.message ? sanitizeErrorMessage(error.message) : 'Unknown error',
     });
     throw new HttpError(502, 'Dashboard database transaction failed.', 'database_transaction_failed');
   } finally {
@@ -85,6 +89,55 @@ function compactIdea(row) {
     source_category: details.source_category || '',
     target_users: Array.isArray(details.target_users) ? details.target_users.slice(0, 4) : [],
   };
+}
+
+function initialScore(title, category, why) {
+  const text = `${title} ${why}`.toLowerCase();
+  let score = 50;
+  if (category === 'money') score += 25;
+  if (/(revenue|sell|customer|market|business|dollar|saas)/.test(text)) score += 10;
+  if (/(daily|agent|automation|workflow|poc)/.test(text)) score += 6;
+  if (/(maybe|someday|unclear)/.test(text)) score -= 8;
+  return Math.max(0, Math.min(100, score));
+}
+
+async function uniqueSlug(db, baseSlug) {
+  const base = (baseSlug || 'idea').slice(0, 72);
+  let candidate = base;
+  let suffix = 1;
+  while (true) {
+    const existing = await db.query('SELECT 1 FROM ideas WHERE slug = $1', [candidate]);
+    if (!existing.rows.length) return candidate;
+    const tag = String(suffix);
+    candidate = `${base.slice(0, Math.max(1, 72 - tag.length - 1))}-${tag}`;
+    suffix += 1;
+  }
+}
+
+async function createIdeaFromBlueprint(rawBlueprint) {
+  const blueprint = normalizeBlueprint(rawBlueprint);
+  return withTransaction(async (db) => {
+    const slug = await uniqueSlug(db, slugify(blueprint.title));
+    const score = initialScore(blueprint.title, blueprint.category, blueprint.why);
+    const result = await db.query(
+      `
+      INSERT INTO ideas(title, slug, category, why, details_json, score)
+      VALUES ($1, $2, $3, $4, $5::jsonb, $6)
+      RETURNING *
+      `,
+      [
+        blueprint.title,
+        slug,
+        blueprint.category,
+        blueprint.why,
+        JSON.stringify(blueprint.details || {}),
+        score,
+      ],
+    );
+    const idea = result.rows[0];
+    await addDecision(db, idea.id, 'dashboard-blueprint-created', 'Created from approved blueprint intake.');
+    return { idea, blueprint };
+  });
 }
 
 async function listIdeas({ status = '', reviewStatus = '', q = '', limit = 50 } = {}) {
@@ -120,12 +173,13 @@ async function listIdeas({ status = '', reviewStatus = '', q = '', limit = 50 } 
     LIMIT $${params.length}
     `,
     params,
+    'listIdeas',
   );
   return result.rows.map(compactIdea);
 }
 
 async function getIdeaById(ideaId, db = { query }) {
-  const result = await db.query('SELECT * FROM ideas WHERE id = $1', [ideaId]);
+  const result = await db.query('SELECT * FROM ideas WHERE id = $1', [ideaId], 'getIdeaById');
   return result.rows[0] || null;
 }
 
@@ -139,6 +193,7 @@ async function latestArtifacts(ideaId, kinds, db = { query }) {
     ORDER BY kind, created_at DESC, id DESC
     `,
     [ideaId, kinds],
+    'latestArtifacts',
   );
   return Object.fromEntries(result.rows.map((row) => [row.kind, { content: row.content, created_at: row.created_at }]));
 }
@@ -154,6 +209,7 @@ async function recentDecisions(ideaId, limit = 10, db = { query }) {
     LIMIT $2
     `,
     [ideaId, safeLimit],
+    'recentDecisions',
   );
   return result.rows;
 }
@@ -260,6 +316,7 @@ async function reviewIdea(ideaId, decision, feedback = '') {
 module.exports = {
   approveIdea,
   compactIdea,
+  createIdeaFromBlueprint,
   getIdeaById,
   latestArtifacts,
   listIdeas,

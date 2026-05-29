@@ -16,6 +16,7 @@ from .projects import (
     poc_dir,
     poc_improvement_loop,
     poc_quality_score_report,
+    openspec_artifacts,
     refresh_readme,
     score_poc_quality,
     write_handoff,
@@ -25,6 +26,7 @@ from .projects import (
     write_poc_patch,
     write_text,
 )
+from .text import slugify
 
 
 STAGE_MEMBERS: dict[str, list[str]] = {
@@ -46,6 +48,8 @@ STAGE_MEMBERS: dict[str, list[str]] = {
     "handoff": ["Handoff Packager"],
 }
 
+AUTO_PICK_STATUSES = {"captured", "researched", "debated"}
+
 
 def _mark_stage_reused(idea, stage: str, summary: str) -> None:
     sync_agent_tasks(
@@ -53,6 +57,11 @@ def _mark_stage_reused(idea, stage: str, summary: str) -> None:
         stage,
         [AgentTaskUpdate(name, "done", summary) for name in STAGE_MEMBERS.get(stage, [])],
     )
+
+
+def _persist_openspec_artifacts(store: Store | PgStore, idea, path: Path) -> None:
+    for kind, content in openspec_artifacts(path, idea).items():
+        store.add_artifact(idea.id, kind, content)
 
 
 def _agentops_init() -> bool:
@@ -143,12 +152,18 @@ def backend_summary(store: Store | PgStore) -> str:
 
 
 def is_eligible_for_auto_pick(idea) -> bool:
-    return not idea.tinkered and idea.review_status != "pending_review" and idea.status not in {
-        "handoff",
-        "completed",
-        "killed",
-        "paused",
-    }
+    return (
+        idea.status in AUTO_PICK_STATUSES
+        and not idea.tinkered
+        and idea.review_status not in {"pending_review", "revise", "approved"}
+    )
+
+
+def is_waiting_for_human(idea) -> bool:
+    return (
+        idea.status in {"planned", "approved", "poc", "handoff"}
+        or idea.review_status in {"pending_review", "revise"}
+    )
 
 
 def build_iteration_context(store: Store | PgStore, idea_id: int) -> dict[str, str]:
@@ -271,6 +286,125 @@ def _details_from_yaml_payload(
     return merged
 
 
+def _normalized_match_tokens(value: object) -> set[str]:
+    text = str(value or "").strip()
+    if not text:
+        return set()
+    tokens = {text.lower(), slugify(text)}
+    compact = slugify(text).replace("-", "")
+    if compact:
+        tokens.add(compact)
+    return {token for token in tokens if token}
+
+
+def _example_match_tokens(path: Path, parsed: dict[str, object]) -> set[str]:
+    tokens = _normalized_match_tokens(parsed.get("title"))
+    stem = path.stem
+    if stem.startswith("idea."):
+        stem = stem.removeprefix("idea.")
+    tokens.update(_normalized_match_tokens(stem))
+
+    details = parsed.get("details")
+    aliases: object = None
+    if isinstance(details, dict):
+        aliases = details.get("aliases")
+    if isinstance(aliases, (list, tuple)):
+        for alias in aliases:
+            tokens.update(_normalized_match_tokens(alias))
+    elif aliases:
+        tokens.update(_normalized_match_tokens(aliases))
+    return tokens
+
+
+def _idea_match_tokens(idea) -> set[str]:
+    tokens = _normalized_match_tokens(idea.title)
+    tokens.update(_normalized_match_tokens(idea.slug))
+    return tokens
+
+
+def example_yaml_files(root: Path) -> list[Path]:
+    examples = root / "examples"
+    if not examples.exists():
+        return []
+    return sorted(
+        {
+            *examples.glob("idea*.yaml"),
+            *examples.glob("idea*.yml"),
+        }
+    )
+
+
+def parsed_example_payloads(root: Path) -> list[tuple[Path, dict[str, object]]]:
+    payloads: list[tuple[Path, dict[str, object]]] = []
+    for path in example_yaml_files(root):
+        try:
+            payloads.append((path, _normalize_from_yaml(path)))
+        except RuntimeError as exc:
+            print(f"[ideate] warning: skipped invalid example {path}: {exc}", file=sys.stderr)
+    return payloads
+
+
+def sync_idea_from_examples(root: Path, store: Store | PgStore, idea) -> tuple[object, bool]:
+    """Refresh an idea row from matching examples/idea*.yml before proposal work."""
+    idea_tokens = _idea_match_tokens(idea)
+    for path, parsed in parsed_example_payloads(root):
+        if not (idea_tokens & _example_match_tokens(path, parsed)):
+            continue
+
+        why = str(parsed["why"])
+        details = parsed["details"]
+        if idea.why == why and idea.details == details:
+            return idea, False
+        refreshed = store.update_idea_context(idea.id, why=why, details=details)
+        print(f"[ideate] synced idea {idea.id} context from {path}", file=sys.stderr)
+        return refreshed, True
+    return idea, False
+
+
+def sync_examples_to_store(
+    root: Path,
+    store: Store | PgStore,
+    *,
+    capture_missing: bool = False,
+    dry_run: bool = False,
+) -> dict[str, int]:
+    """Sync examples into the active store, which may be SQLite or Neon/Postgres."""
+    ideas = store.list_ideas()
+    examples = parsed_example_payloads(root)
+    counts = {"updated": 0, "unchanged": 0, "created": 0, "skipped": 0}
+
+    for path, parsed in examples:
+        example_tokens = _example_match_tokens(path, parsed)
+        match = next((idea for idea in ideas if _idea_match_tokens(idea) & example_tokens), None)
+        title = str(parsed["title"])
+        why = str(parsed["why"])
+        details = parsed["details"]
+
+        if match:
+            if match.why == why and match.details == details:
+                counts["unchanged"] += 1
+                continue
+            if not dry_run:
+                updated = store.update_idea_context(match.id, why=why, details=details)
+                ideas = [updated if idea.id == updated.id else idea for idea in ideas]
+            counts["updated"] += 1
+            print(f"[ideate] synced {path} -> idea {match.id}", file=sys.stderr)
+            continue
+
+        if not capture_missing:
+            counts["skipped"] += 1
+            print(f"[ideate] skipped {path}: no matching idea", file=sys.stderr)
+            continue
+
+        if not dry_run:
+            created = store.add_idea(title, str(parsed["category"]), why, details=details)
+            ideas.append(created)
+        counts["created"] += 1
+        print(f"[ideate] captured {path}", file=sys.stderr)
+
+    return counts
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -328,8 +462,25 @@ def main(argv: list[str] | None = None) -> int:
             store.log_run("daily", f"Reviewed {len(ideas)} ideas")
             return _done(0)
 
+        if args.command == "examples-sync":
+            counts = sync_examples_to_store(
+                root,
+                store,
+                capture_missing=args.capture_missing,
+                dry_run=args.dry_run,
+            )
+            print(
+                "Example sync: "
+                f"{counts['updated']} updated, "
+                f"{counts['unchanged']} unchanged, "
+                f"{counts['created']} created, "
+                f"{counts['skipped']} skipped"
+            )
+            return _done(0)
+
         if args.command == "openspec":
             idea = store.get_idea(args.idea_id)
+            idea, _context_synced = sync_idea_from_examples(root, store, idea)
             path = root / "ideas" / idea.slug
 
             def _read_file_or_db(artifact_kind: str, filename: str) -> str:
@@ -343,6 +494,7 @@ def main(argv: list[str] | None = None) -> int:
             debate = _read_file_or_db("debate", "debate.md")
             plan = _read_file_or_db("plan", "implementation_plan.md")
             write_openspec(path, idea, research=research, debate=debate, plan=plan)
+            _persist_openspec_artifacts(store, idea, path)
             print(f"Regenerated openspec for idea {idea.id} at {path / 'openspec'}")
             return _done(0)
 
@@ -361,6 +513,9 @@ def main(argv: list[str] | None = None) -> int:
             return _done(0)
 
         idea = store.get_idea(args.idea_id)
+        context_synced = False
+        if args.command in {"research", "debate", "plan", "approve", "poc", "poc-patch", "score", "handoff"}:
+            idea, context_synced = sync_idea_from_examples(root, store, idea)
 
         def mark_task_done(stage: str):
             def _mark(agent_name: str, output: str) -> None:
@@ -374,7 +529,7 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "research":
             cached = store.latest_artifact(idea.id, "research")
-            if cached and not args.force_refresh:
+            if cached and not args.force_refresh and not context_synced:
                 _mark_stage_reused(idea, "research", "Reused cached research artifact.")
                 store.set_status(idea.id, "researched")
                 print(cached)
@@ -401,7 +556,7 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "debate":
             cached = store.latest_artifact(idea.id, "debate")
-            if cached and not args.force_refresh:
+            if cached and not args.force_refresh and not context_synced:
                 _mark_stage_reused(idea, "debate", "Reused cached debate artifact.")
                 store.set_status(idea.id, "debated")
                 print(cached)
@@ -430,7 +585,7 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "plan":
             cached_plan = store.latest_artifact(idea.id, "plan")
-            if cached_plan and not args.force_refresh:
+            if cached_plan and not args.force_refresh and not context_synced:
                 research = store.latest_artifact(idea.id, "research") or research_brief(idea)
                 debate = store.latest_artifact(idea.id, "debate") or debate_brief(idea, research)
                 _mark_stage_reused(idea, "planning", "Reused cached plan artifact.")
@@ -446,6 +601,7 @@ def main(argv: list[str] | None = None) -> int:
                     if value
                 ]
                 path = write_planning_files(root, planned, research, debate, cached_plan, crew_transcripts)
+                _persist_openspec_artifacts(store, planned, path)
                 print(f"Planned idea {idea.id} at {path}")
                 return _done(0)
 
@@ -479,6 +635,7 @@ def main(argv: list[str] | None = None) -> int:
                 if value
             ]
             path = write_planning_files(root, planned, research, debate, plan, crew_transcripts)
+            _persist_openspec_artifacts(store, planned, path)
             print(f"Planned idea {idea.id} at {path}")
             return _done(0)
 
@@ -636,6 +793,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("daily", help="Show daily review")
 
+    examples_sync = sub.add_parser("examples-sync", help="Sync examples/idea*.yaml details into the active database")
+    examples_sync.add_argument(
+        "--capture-missing",
+        action="store_true",
+        help="Capture examples that do not match an existing idea",
+    )
+    examples_sync.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Report what would sync without writing to the database",
+    )
+
     for name in ("research", "debate", "plan"):
         cmd = sub.add_parser(name, help=f"{name.title()} an idea")
         cmd.add_argument("idea_id", type=int)
@@ -714,7 +883,17 @@ def print_daily(ideas) -> None:
         return
 
     eligible = [idea for idea in ideas if is_eligible_for_auto_pick(idea)]
-    ranked = eligible or ideas
+    waiting = [idea for idea in ideas if is_waiting_for_human(idea)]
+    ranked = eligible
+    if not ranked:
+        print("No auto-pickable ideas right now.")
+        if waiting:
+            print("Waiting on human decisions:")
+            for idea in waiting[:5]:
+                print(f"- {format_idea(idea)}")
+        print("\nNext action:")
+        print('Capture or sync another idea, or review one of the waiting items above.')
+        return
     money = [idea for idea in ranked if idea.category == "money"]
     personal = [idea for idea in ranked if idea.category == "personal"]
     focus = ranked[0]

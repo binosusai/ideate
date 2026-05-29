@@ -6,6 +6,7 @@
     "pg": "^8.13.0"
   },
   "scripts": {
-    "build": "echo 'static build'"
+    "build": "echo 'static build'",
+    "start:vercel": "node scripts/check-dashboard-env.js && npx vercel dev"
   }
 }

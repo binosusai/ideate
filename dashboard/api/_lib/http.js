@@ -38,5 +38,6 @@ function sanitizeErrorMessage(message) {
 module.exports = {
   HttpError,
   methodNotAllowed,
+  sanitizeErrorMessage,
   sendError,
 };

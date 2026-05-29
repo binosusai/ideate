@@ -131,6 +131,18 @@ class Store:
             )
         if "details_json" not in columns:
             conn.execute("ALTER TABLE ideas ADD COLUMN details_json TEXT NOT NULL DEFAULT ''")
+        conn.execute(
+            """
+            UPDATE ideas
+            SET review_status = 'pending_review',
+                iteration_count = CASE
+                    WHEN iteration_count = 0 THEN 1
+                    ELSE iteration_count
+                END
+            WHERE status = 'poc'
+              AND review_status = 'new'
+            """
+        )
 
     def add_idea(
         self,
@@ -155,6 +167,30 @@ class Store:
                 (title.strip(), slug, category, why.strip(), details_json, score),
             )
             row = conn.execute("SELECT * FROM ideas WHERE slug = ?", (slug,)).fetchone()
+        return row_to_idea(row)
+
+    def update_idea_context(
+        self,
+        idea_id: int,
+        *,
+        why: str,
+        details: dict[str, Any] | list[Any] | None,
+    ) -> Idea:
+        details_json = _details_to_json(details)
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE ideas
+                SET why = ?,
+                    details_json = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (why.strip(), details_json, idea_id),
+            )
+            row = conn.execute("SELECT * FROM ideas WHERE id = ?", (idea_id,)).fetchone()
+        if row is None:
+            raise KeyError(f"idea {idea_id} was not found")
         return row_to_idea(row)
 
     def get_idea(self, idea_id: int) -> Idea:
@@ -462,6 +498,27 @@ class PgStore:
                 cur.execute(
                     "ALTER TABLE ideas ADD COLUMN IF NOT EXISTS details_json JSONB NOT NULL DEFAULT '{}'::jsonb"
                 )
+                cur.execute(
+                    """
+                    UPDATE ideas
+                    SET review_status = 'pending_review',
+                        iteration_count = CASE
+                            WHEN iteration_count = 0 THEN 1
+                            ELSE iteration_count
+                        END
+                    WHERE status = 'poc'
+                      AND review_status = 'new'
+                    """
+                )
+        except Exception as exc:
+            pgcode = getattr(exc, "pgcode", "")
+            if pgcode == "42501" or "permission denied for schema public" in str(exc).lower():
+                raise RuntimeError(
+                    "DATABASE_URL can connect to Postgres, but this role cannot create "
+                    "Ideate tables in schema public. Use the Neon owner/admin connection "
+                    "string for `idea init`, or grant this role CREATE on schema public."
+                ) from exc
+            raise
         finally:
             conn.close()
 
@@ -490,6 +547,36 @@ class PgStore:
                 row = cur.fetchone()
         finally:
             conn.close()
+        return row_to_idea(row)
+
+    def update_idea_context(
+        self,
+        idea_id: int,
+        *,
+        why: str,
+        details: dict[str, Any] | list[Any] | None,
+    ) -> Idea:
+        details_json = _details_to_json(details)
+        conn = self._connect()
+        try:
+            with conn:
+                cur = self._dict_cursor(conn)
+                cur.execute(
+                    """
+                    UPDATE ideas
+                    SET why = %s,
+                        details_json = %s::jsonb,
+                        updated_at = NOW()
+                    WHERE id = %s
+                    RETURNING *
+                    """,
+                    (why.strip(), details_json, idea_id),
+                )
+                row = cur.fetchone()
+        finally:
+            conn.close()
+        if row is None:
+            raise KeyError(f"idea {idea_id} was not found")
         return row_to_idea(row)
 
     def get_idea(self, idea_id: int) -> Idea:

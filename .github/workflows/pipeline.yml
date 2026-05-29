@@ -13,7 +13,7 @@ on:
       stages:
         description: "Comma-separated stages to run"
         required: false
-        default: "research,debate,plan,approve,poc,review"
+        default: "research,debate,plan"
         type: string
       force_refresh_stages:
         description: "Force rerun research/debate/plan even if artifacts exist (recommended for AgentOps traces)"
@@ -92,7 +92,7 @@ jobs:
           import psycopg2
 
           idea_id = (os.environ.get("INPUT_IDEA_ID") or "").strip()
-          stages = (os.environ.get("INPUT_STAGES") or "research,debate,plan,approve,poc,review").strip()
+          stages = (os.environ.get("INPUT_STAGES") or "research,debate,plan").strip()
           force_refresh_raw = (os.environ.get("INPUT_FORCE_REFRESH") or "false").strip().lower()
           force_refresh = "1" if force_refresh_raw in {"1", "true", "yes", "on"} else "0"
 
@@ -104,7 +104,13 @@ jobs:
                   """
                   SELECT id
                   FROM ideas
-                  WHERE status NOT IN ('handoff', 'completed', 'killed', 'paused')
+                  WHERE (
+                      -- Scheduled proposal runs should advance only unplanned or revision work.
+                      -- Planned ideas are waiting for human approval and would otherwise re-email
+                      -- the same cached proposal every day.
+                      status IN ('captured', 'researched', 'debated')
+                      OR COALESCE(review_status, 'new') = 'revise'
+                    )
                     AND COALESCE(tinkered, FALSE) = FALSE
                     AND COALESCE(review_status, 'new') <> 'pending_review'
                   ORDER BY
@@ -361,14 +367,12 @@ jobs:
           name: ideate-status-dashboard
           path: /tmp/ideate-status-dashboard.md
 
-  # ── Job 2: POC — requires manual approval via the 'poc-approval' environment ─
+  # ── Job 2: POC — started by dashboard approval or explicit workflow input ─
   poc:
     name: Build POC & create repo
     needs: plan
     if: needs.plan.outputs.idea_id != '0' && contains(needs.plan.outputs.stages, 'poc')
     runs-on: ubuntu-latest
-    # ⬇ This line makes GitHub pause here and email you for approval
-    environment: poc-approval
 
     steps:
       - uses: actions/checkout@v4
@@ -393,7 +397,7 @@ jobs:
           echo "  id:    ${{ needs.plan.outputs.idea_id }}"
           echo "  title: ${{ needs.plan.outputs.idea_title }}"
           echo "  slug:  ${{ needs.plan.outputs.idea_slug }}"
-          idea approve ${{ needs.plan.outputs.idea_id }} --rationale "Approved via poc-approval environment gate."
+          idea approve ${{ needs.plan.outputs.idea_id }} --rationale "Approved for POC build."
 
       - name: Build POC & push new repo
         env:
@@ -418,8 +422,6 @@ jobs:
     needs: [plan, poc]
     runs-on: ubuntu-latest
     if: needs.plan.outputs.idea_id != '0' && contains(needs.plan.outputs.stages, 'review') && (needs.poc.result == 'success' || needs.poc.result == 'skipped')
-    environment: poc-review
-
     steps:
       - uses: actions/checkout@v4
         with:
