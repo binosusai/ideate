@@ -2,54 +2,44 @@
 
 ## Implementation Tasks
 - [ ] 1. Product Workflow
-- [ ] 1.1 Users install CLI tool.
-- [ ] 1.2 Initialize project with `ukg init` creating a local config file (YAML/JSON) storing unified API key metadata and proxied keys encrypted l...
-- [ ] 1.3 CLI tool to create/manage one project key that proxies calls to 2-3 hardcoded third-party APIs (e.g., GitHub, Stripe).
-- [ ] 1.4 Store third-party keys encrypted in a local JSON file per project.
-- [ ] 1.5 Proxy requests locally, replacing unified key with actual API keys.
+- [ ] 1.1 Focus on top 3-5 third-party APIs with well-documented, programmatic key management (e.g., Stripe, Twilio, SendGrid).
+- [ ] 1.2 User Onboarding.
+- [ ] 1.3 User authenticates GitHub repo → selects desired third-party APIs → app auto-provisions API keys via vendor APIs or prompts for manual in...
+- [ ] 1.4 Store encrypted keys locally and optionally in a minimal backend (e.g., encrypted DB or file storage) for proxying.
+- [ ] 1.5 Proxying Requests.
 - [ ] 2. Backend APIs
 - [ ] 2.1 Implement `POST /projects` endpoint in the local proxy API.
-- [ ] 2.2 Implement `GET /projects/{id}/keys` endpoint in the local proxy API.
-- [ ] 2.3 Implement `POST /projects/{id}/keys` endpoint in the local proxy API.
-- [ ] 2.4 Implement `DELETE /projects/{id}/keys/{key_id}` endpoint in the local proxy API.
-- [ ] 2.5 Implement `POST /projects/{id}/proxy/{tool}/request` endpoint in the local proxy API.
-- [ ] 2.6 Tradeoff: Simple REST avoids auth complexity in POC; no user mgmt yet.
+- [ ] 2.2 Implement `GET /projects/{project_id}` endpoint in the local proxy API.
+- [ ] 2.3 Implement `POST /projects/{project_id}/keys` endpoint in the local proxy API.
+- [ ] 2.4 Request: `{ "service": "stripe", "api_key": "sk_test_..." }.
+- [ ] 2.5 Proxy Endpoint.
+- [ ] 2.6 Implement `POST /proxy/{project_id}/{service}/...` endpoint in the local proxy API.
 - [ ] 3. Frontend UI
-- [ ] 3.1 ukey init` — create project config with single unified key.
-- [ ] 3.2 ukey add <tool> <api-key>` — add third-party API key to config.
-- [ ] 3.3 ukey proxy <tool> [endpoint]` — proxy API request through unified key.
-- [ ] 3.4 Local HTTP proxy server (localhost:PORT) routes requests using unified key to third-party APIs.
-- [ ] 3.5 Security: keys encrypted at rest with user password; no cloud storage to avoid early compliance blockers.
+- [ ] 3.1 # Implementation Plan: Unified API key gateway — one key per project that provisions and proxies all third-party tool API keys.
+- [ ] 3.2 Create a working proof of concept that demonstrates the core value of `Unified API key gateway — one key per project that provisions and...
+- [ ] 3.3 Represent the idea as a concrete user workflow.
+- [ ] 3.4 Create one runnable local draft project.
+- [ ] 3.5 Include acceptance tests or manual verification steps.
 - [ ] 4. Security And Access
-- [ ] 4.1 For local POC, implement a CLI-first, local file-backed auth posture: store the unified API key and proxied third-party keys encrypted in...
-- [ ] 4.2 CLI-first tool that generates a local file-backed project config storing unified API key metadata and encrypted third-party API keys.
-- [ ] 4.3 Proxy server component that reads local config, intercepts unified key requests, and routes them to corresponding third-party APIs with i...
-- [ ] 4.4 Support onboarding new third-party APIs with a single CLI command that updates local config and provisions keys.
-- [ ] 4.5 Basic audit log stored locally, tracking key usage and rotations.
+- [ ] 4.1 Use a CLI-first, local-first approach with file-backed storage (e.g., encrypted JSON/YAML) for unified API keys per project.
+- [ ] 4.2 Proxy requests locally or via a lightweight local server that injects third-party keys.
+- [ ] 4.3 No external paid services or deployments to keep iteration fast and low-risk.
+- [ ] 4.4 Implement minimal encryption (e.g., libsodium) for stored keys and basic access control (local user only).
+- [ ] 4.5 Support a small fixed set of APIs with documented manual provisioning steps to sidestep automation gaps.
 - [ ] 5. Data And Storage
-- [ ] 5.1 # Implementation Plan: Unified API key gateway — one key per project that provisions and proxies all third-party tool API keys.
-- [ ] 5.2 Create a working proof of concept that demonstrates the core value of `Unified API key gateway — one key per project that provisions and...
-- [ ] 5.3 Represent the idea as a concrete user workflow.
-- [ ] 5.4 Create one runnable local draft project.
+- [ ] 5.1 • ACID compliant, supports encryption extensions (e.g., SQLCipher) for credential security.
 - [ ] 6. Infrastructure And Delivery
-- [ ] 6.1 Use AWS Secrets Manager for centralized, encrypted storage of third-party API keys (supports audit/compliance).
-- [ ] 6.2 Deploy a lightweight API Gateway + Lambda proxy layer to handle unified key authentication and proxy requests to third-party APIs.
-- [ ] 6.3 Use DynamoDB for metadata (projects, keys, usage logs).
-- [ ] 6.4 Host the developer portal and onboarding UI on Vercel for fast global CDN and easy CI/CD integration.
-- [ ] 6.5 Use serverless functions for CLI token issuance and Slack bot integration.
+- [ ] 6.1 Use AWS Lambda (Node.js) for API key proxy and provisioning logic.
+- [ ] 6.2 Store encrypted keys in AWS Secrets Manager with fine-grained IAM roles.
+- [ ] 6.3 Use API Gateway to expose Lambda endpoints securely.
+- [ ] 6.4 Enable CloudWatch logging and alarms for anomaly detection.
+- [ ] 6.5 Use AWS KMS for encryption keys, ensuring zero-trust architecture.
 - [ ] 7. Documentation And Handoff
-- [ ] 7.1 CLI-first tool that generates a local file-backed project config storing unified API key metadata and encrypted third-party API keys.
-- [ ] 7.2 Proxy server component that reads local config, intercepts unified key requests, and routes them to corresponding third-party APIs with i...
-- [ ] 7.3 Support onboarding new third-party APIs with a single CLI command that updates local config and provisions keys.
-- [ ] 7.4 Basic audit log stored locally, tracking key usage and rotations.
-- [ ] 8. Acceptance Checks
-- [ ] 8.1 CLI can create a new project with a unified API key.
-- [ ] 8.2 Proxy correctly forwards requests to at least 3 different third-party APIs using stored keys.
-- [ ] 8.3 Adding/removing APIs updates local config and proxy behavior immediately.
-- [ ] 8.4 Audit logs record key usage events locally.
-- [ ] 8.5 Encryption and local authentication prevent unauthorized key access.
-- [ ] 8.6 MVP runs fully offline without external dependencies.
+- [ ] 7.1 Scope: Support top 5 third-party APIs (e.g., Stripe, Twilio, SendGrid, GitHub, Slack) with documented API key provisioning endpoints or O...
+- [ ] 7.2 Architecture: CLI-first, local-first, file-backed prototype that generates config/artifacts readable by downstream agents; no external pa...
+- [ ] 7.3 Automated provisioning and rotation where API supports it; manual fallback UI for others.
+- [ ] 7.4 Secure local storage of credentials with encryption at rest.
 
 ## Tracking
-- [ ] 9. Validate all implemented tasks against acceptance tests for `Unified API key gateway — one key per project that provisions and proxies all third-party tool API keys`.
-- [ ] 10. Mark this OpenSpec change ready for handoff.
+- [ ] 8. Validate all implemented tasks against acceptance tests for `Unified API key gateway — one key per project that provisions and proxies all third-party tool API keys`.
+- [ ] 9. Mark this OpenSpec change ready for handoff.

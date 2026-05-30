@@ -20,5 +20,8 @@ Developers manage dozens of API keys across tools; one unified key per project r
 - `acceptance_tests.md`
 - `poc_report.md`
 - `poc_location.md`
+- `poc_quality_rubric.md`
+- `poc_quality_score.md`
+- `poc_improvement_loop.md`
 - `handoff.md`
 - `openspec/`

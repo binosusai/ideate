@@ -22,209 +22,271 @@ Feasible if it can run locally using standard tooling and sample data.
 Founder Board debate exists and was considered.
 
 ## Crew Implementation Notes
-- Product Planner: MVP Workflow for Unified API Key Gateway:
+- Product Planner: MVP Workflow for Unified API Key Gateway
 
-1. **CLI-first & Local-first Setup**
-   - Users install CLI tool.
-   - Initialize project with `ukg init` creating a local config file (YAML/JSON) storing unified API key metadata and proxied keys encrypted locally.
-   - Tradeoff: Local storage simplifies onboarding and offline use but limits centralized audit/compliance (acceptable for MVP targeting startups).
+1. **Scope & Target APIs**  
+   - Focus on top 3-5 third-party APIs with well-documented, programmatic key management (e.g., Stripe, Twilio, SendGrid).  
+   - Exclude OAuth-only or manual key APIs initially to reduce complexity.
 
-2. **Provisioning & Proxying**
-   - CLI commands to add third-party API keys: `ukg add --tool=slack --key=xxx`.
-   - Store encrypted keys locally; generate one unified project key.
-   - Proxy requests via CLI or lightweight local proxy server that maps unified key to underlying keys.
-   - Tradeoff: Local proxy avoids fragile cloud dependencies but limits multi-user real-time sync.
+2. **User Onboarding**  
+   - GitHub Marketplace app triggered on new repo creation for seed-stage SaaS projects.  
+   - CLI tool for local-first usage with file-backed config for offline access and auditability.
 
-3. **Single-click Onboarding**
-   - Slack onboarding bot (basic webhook) triggers CLI setup instructions and shares unified project key.
-   - Tradeoff: Minimal Slack integration accelerates adoption but is limited to Slack users.
+3. **Provisioning Flow**  
+   - User authenticates GitHub repo → selects desired third-party APIs → app auto-provisions API keys via vendor APIs or prompts for manual input if automation unavailable.  
+   - Store encrypted keys locally and optionally in a minimal backend (e.g., encrypted DB or file storage) for proxying.
 
-4. **Rotation & Audit (Basic)**
-   - CLI commands to rotate keys and view usage logs stored locally.
-   - Tradeoff: No centralized audit; MVP focuses on proving friction reduction.
+4. **Proxying Requests**  
+   - Implement a lightweight local proxy or serverless function that intercepts API calls from the app using the unified key and forwards them with the correct third-party key.  
+   - Log usage for audit and rotation triggers.
 
-5. **Next Steps**
-   - Validate with 5–30 person SaaS startups in accelerators.
-   - Measure onboarding speed, error reduction, and willingness to pay for advanced features.
+5. **Rotation & Revocation**  
+   - Support manual rotation via CLI commands initially; automate rotation only for APIs with supported endpoints.
 
-This MVP avoids paid services and external deployment, focusing on rapid POC and user feedback.
-- POC Coder: POC Plan: CLI-first, local-file-backed unified API key gateway
+6. **Security & Trust**  
+   - Encrypt all stored keys with user-controlled keys.  
+   - Provide clear docs on data ownership and no backend key exposure.  
+   - No paid services or complex infra dependencies to speed MVP.
 
-1. Scope:  
-- CLI tool to create/manage one project key that proxies calls to 2-3 hardcoded third-party APIs (e.g., GitHub, Stripe).  
-- Store third-party keys encrypted in a local JSON file per project.  
-- Proxy requests locally, replacing unified key with actual API keys.
+**Tradeoffs:**  
+- Limited API coverage initially to ensure fast delivery and reliability.  
+- Local-first approach limits multi-user collaboration but reduces trust barriers.  
+- Proxy adds minimal latency but centralizes key usage for easier rotation and audit.
 
-2. Implementation steps:  
-- CLI commands: `init-project`, `add-api-key <service>`, `list-keys`, `proxy-request <service> <endpoint>`.  
-- Use symmetric encryption (e.g., AES) with a user password to encrypt stored keys.  
-- Proxy logic: intercept CLI requests, rewrite with actual keys, forward to third-party API, return response.  
-- Minimal error handling and no user management.
+Deliverables: CLI tool, GitHub Marketplace app, proxy component, docs. MVP ready in 1-2 weeks.
+- POC Coder: POC Plan: Unified API Key Gateway (Local CLI-first)
 
-3. Tradeoffs:  
-- Local file storage simplifies setup, no cloud infra needed, but no centralized audit or team sharing.  
-- Hardcoded APIs limit scope but prove core concept quickly.  
-- CLI-only excludes UI but accelerates iteration and fits developer workflows.  
-- No paid services or external deployment reduces cost and complexity.
+Scope:  
+- CLI tool managing one unified project key locally (file-backed JSON).  
+- Proxy requests to 2–3 popular third-party APIs with static API keys (e.g., Stripe, SendGrid).  
+- Manual key entry for third-party keys (no automated provisioning yet).  
+- Proxy forwards requests adding correct third-party key from local store.  
+- Basic encryption of stored keys (e.g., AES with user password).  
+- Simple HTTP proxy server runs locally, authenticates requests with unified key, injects third-party keys.
 
-4. Success criteria:  
-- Developer can onboard a new API key, use the unified project key to call multiple APIs via CLI proxy.  
-- Demonstrates friction reduction and centralized key management in a minimal setup.
+Tradeoffs:  
+- No automation of key provisioning (due to API limitations and complexity).  
+- Local only, no cloud or multi-user sync (avoids trust/security risks, accelerates build).  
+- Minimal UI (CLI + config files) to prove concept quickly.  
+- No OAuth/token refresh support yet; static keys only.
 
-Deliverables: CLI tool repo + README with usage instructions, example encrypted key file, and proxy demo script.  
-Estimated time: 1 focused dev session (4-6 hours).
-- Frontend Engineer: POC Interface Plan:
+Implementation Steps:  
+1. CLI scaffold: init project, add third-party keys, generate unified key.  
+2. Local encrypted JSON store for keys.  
+3. Local HTTP proxy server authenticates unified key, proxies requests with injected keys.  
+4. Demo: curl or Postman calls to proxy with unified key, hitting Stripe/SendGrid APIs.
 
-1. CLI-first, local file-backed config (YAML/JSON) per project storing unified API key and proxied keys metadata.
-2. Commands:
-   - `ukey init` — create project config with single unified key.
-   - `ukey add <tool> <api-key>` — add third-party API key to config.
-   - `ukey list` — list proxied APIs and status.
-   - `ukey proxy <tool> [endpoint]` — proxy API request through unified key.
-3. Local HTTP proxy server (localhost:PORT) routes requests using unified key to third-party APIs.
-4. Minimal UI: CLI outputs JSON for integration with Slack bot or dashboard later.
-5. Security: keys encrypted at rest with user password; no cloud storage to avoid early compliance blockers.
-6. Tradeoffs:
-   - Pros: Fast, simple, no external dependencies, easy onboarding.
-   - Cons: No centralized audit/compliance, limited team collaboration, not enterprise-ready.
-7. MVP goal: demonstrate single-key onboarding and proxying within 1 week.
+Outcome:  
+Proves unified key concept, centralizes key usage, minimal viable demo in <1 week without external dependencies or paid services.
+- Frontend Engineer: POC Interface Plan: CLI-First with Minimal Web Dashboard
 
-Action: Build CLI tool skeleton + local proxy + config file support. Validate proxying a sample API call with unified key.
-- Backend Engineer: POC API & Local Persistence Plan:
+1. CLI Tool (Primary Interface)
+- Commands:
+  • `init` — create new project with unified key
+  • `add-tool <tool-name>` — provision & link 3rd-party API keys (Stripe, Twilio, SendGrid)
+  • `list` — show linked tools and status
+  • `rotate <tool-name>` — rotate underlying keys
+  • `proxy-request <tool-name> <endpoint> [--data]` — proxy API calls via unified key
+- File-backed config: JSON/YAML storing project key and tool mappings locally
+- Benefits: fast iteration, local-first, no external dependencies, easy artifact sharing
+- Tradeoff: CLI-only limits discoverability and onboarding UX; no GUI for non-CLI users
 
-1. API Design (CLI-first, minimal):
-- POST /projects {name} → create project, returns unified project_key (UUID)
-- GET /projects/{id}/keys → list proxied 3rd-party API keys (masked)
-- POST /projects/{id}/keys {tool, api_key} → add 3rd-party key
-- DELETE /projects/{id}/keys/{key_id} → revoke key
-- POST /projects/{id}/proxy/{tool}/request {method, path, body} → proxy API call with stored key
+2. Minimal Web Dashboard (Secondary, Optional)
+- Show project status, linked tools, usage logs
+- Onboard via GitHub Marketplace OAuth flow
+- Tradeoff: adds complexity but aids trust & visibility; defer to post-POC
 
-Tradeoff: Simple REST avoids auth complexity in POC; no user mgmt yet.
+3. Security & Trust
+- Local encryption of stored keys, no cloud storage in POC
+- Proxy requests signed with unified key, logged locally
 
-2. Local Persistence:
-- Store projects and encrypted 3rd-party keys in a local JSON file (e.g., ~/.uapkgateway/config.json)
-- Encryption: AES-256 with user-provided passphrase at CLI start
-- File format example:
-  {
-    "projects": {
-      "proj-uuid": {
-        "name": "My Project",
-        "keys": {
-          "tool1": "encrypted_api_key1",
-          "tool2": "encrypted_api_key2"
-        }
-      }
-    }
-  }
+4. MVP Scope
+- Support 3 top APIs with known key management APIs
+- No paid services or external deployment required
 
-Tradeoff: Local file simplifies setup and offline use, but no centralized audit or multi-user sync (acceptable for MVP).
+Next Steps: Implement CLI skeleton + local config + proxy stub; demo key provisioning + proxy call for Stripe.
+- Backend Engineer: **API Design for POC**
 
-3. Proxying:
-- CLI acts as a local proxy forwarding requests to 3rd-party APIs with injected keys.
-- Logs minimal request metadata locally for audit demo.
+1. **Project API Key Management**
+- `POST /projects`  
+  Request: `{ "name": "My SaaS Project" }`  
+  Response: `{ "project_id": "uuid", "unified_key": "proj-unified-key" }`  
+- `GET /projects/{project_id}`  
+  Response: `{ "project_id": "uuid", "unified_key": "proj-unified-key", "linked_services": [...] }`
 
-Summary: This minimal API + encrypted local JSON persistence enables a working POC demonstrating unified key management and proxying without external dependencies or cloud infra, aligning with MVP speed and compliance tradeoffs.
-- Auth Engineer: For local POC, implement a CLI-first, local file-backed auth posture: store the unified API key and proxied third-party keys encrypted in a local config file (e.g., ~/.unified-apikey.json.enc). Use a user passphrase or OS keychain for encryption. This enables quick iteration, offline use, and easy artifact handoff to other crews. Avoid external dependencies or paid services to keep the POC runnable in one session.
+2. **Third-Party API Key Provisioning (Manual for POC)**
+- `POST /projects/{project_id}/keys`  
+  Request: `{ "service": "stripe", "api_key": "sk_test_..." }`  
+  Response: `{ "status": "linked" }`
 
-Tradeoffs:
-- Pros: Fast setup, minimal infra, developer-friendly, no cloud lock-in, easy demo.
-- Cons: No centralized audit, no role-based access, limited compliance (SOC2 risk), no team-wide key rotation visibility.
+3. **Proxy Endpoint**
+- `POST /proxy/{project_id}/{service}/...`  
+  Forwards requests to third-party API using stored key, adding authentication headers.
 
-For production handoff, pivot to a cloud-managed secrets vault with:
-- Centralized encrypted storage
-- Role-based access control (RBAC)
-- Audit logs and compliance reporting
-- API key proxying service with token exchange
-- Integration with identity providers (SSO/OAuth)
+---
 
-Tradeoffs:
-- Pros: Enterprise-grade security, compliance-ready, team collaboration, scalable.
-- Cons: Higher complexity, infra cost, onboarding friction.
+**Local Persistence**
 
-Action: Build local CLI POC first, validate developer UX and proxy logic. Then design cloud vault integration for production, prioritizing compliance and auditability.
-- Database Engineer: For the Unified API Key Gateway MVP, choose a local-first, file-backed embedded database to maximize simplicity, speed, and offline capability:
+- Use a local file (YAML/JSON) storing:  
+  ```yaml
+  projects:
+    - id: uuid
+      unified_key: string
+      services:
+        stripe: sk_test_...
+        sendgrid: SG.xxxx
+  ```
+- CLI-first, file-backed for easy inspection and handoff.
+- Encryption at rest optional for POC; document as tradeoff.
 
-**Recommended DB:** SQLite  
-- **Why:** Zero-config, serverless, cross-platform, ACID-compliant, and widely supported by CLI tools and languages.  
-- **Storage:** Single encrypted file per project (use SQLCipher or OS-level encryption) to protect keys locally.  
+---
+
+**Tradeoffs**
+
+- **Manual key input** vs full automated provisioning: POC uses manual input due to API heterogeneity and rate limits.
+- **Local file storage** vs cloud DB: local enables fast iteration, no infra cost, but no multi-user sync.
+- **Proxying requests** adds latency and complexity but centralizes credential use and hides keys from clients.
+- **Security**: POC minimal; production requires encryption, audit logs, and compliance.
+
+---
+
+**Actionables**
+
+- Define CLI commands to create projects, add keys, and proxy requests.
+- Implement local JSON/YAML persistence with schema validation.
+- Build proxy middleware to inject keys per service.
+- Mock 3 services (Stripe, SendGrid, Twilio) with manual key input.
+- Document security gaps and next steps for automation and trust.
+- Auth Engineer: For local POC:  
+- Use a CLI-first, local-first approach with file-backed storage (e.g., encrypted JSON/YAML) for unified API keys per project.  
+- Proxy requests locally or via a lightweight local server that injects third-party keys.  
+- No external paid services or deployments to keep iteration fast and low-risk.  
+- Implement minimal encryption (e.g., libsodium) for stored keys and basic access control (local user only).  
+- Support a small fixed set of APIs with documented manual provisioning steps to sidestep automation gaps.  
+
+Tradeoffs:  
++ Fast to build, easy to demo, no cloud dependency, low trust barrier for early adopters.  
+- Limited automation, no multi-user sync, no centralized auditing or rotation.  
+
+For production handoff:  
+- Move to a cloud-hosted gateway with hardened security (encryption at rest/in transit, zero-trust auth).  
+- Integrate with established identity providers (OAuth/OIDC) for team access control.  
+- Automate provisioning/rotation where APIs allow; fallback to manual workflows with audit logs.  
+- Provide a web dashboard and API for key management and usage monitoring.  
+- Pursue SOC 2 or ISO 27001 compliance to build trust.  
+
+Tradeoffs:  
++ Scalable, secure, multi-tenant, audit-ready, easier onboarding.  
+- Higher complexity, cost, longer dev cycle, requires trust-building and compliance effort.  
+
+Action: Start POC locally with CLI + encrypted file store; plan cloud gateway MVP with automated key lifecycle and compliance roadmap for production.
+- Database Engineer: For a local, deployable database to support the Unified API Key Gateway POC, choose SQLite as the default:
+
+- **Why SQLite?**  
+  • Zero-config, file-based, no server needed → perfect for CLI-first, local-first approach  
+  • Lightweight and fast for small-to-medium datasets (API keys, project metadata)  
+  • ACID compliant, supports encryption extensions (e.g., SQLCipher) for credential security  
+  • Easy to snapshot, backup, and share artifacts with other teams or agents  
+
 - **Tradeoffs:**  
-  - No centralized audit or real-time multi-user sync (acceptable for early-stage startups).  
-  - Limited built-in role-based access control; rely on OS permissions and encryption.  
-  - Compliance gaps for SOC2-level needs—flag for future cloud vault integration.  
+  • Not suited for high concurrency or multi-user production environments → fine for MVP and demos  
+  • Limited built-in user access control → rely on OS-level file permissions and encryption  
+  • No built-in replication or clustering → future upgrades can migrate to PostgreSQL or Vault-backed stores  
 
-**Implementation notes:**  
-- Store API keys and metadata in normalized tables with timestamps for rotation tracking.  
-- Provide CLI commands to read/write keys and export artifacts for downstream agents.  
-- Encrypt sensitive fields or the entire DB file to mitigate local compromise risk.  
-- Plan for future migration to cloud vaults or proxy services as compliance demands grow.
+- **Implementation:**  
+  • Store API keys encrypted at rest using SQLCipher or application-layer encryption  
+  • Use a simple schema: Projects table, API Keys table with metadata and encrypted secrets  
+  • Bundle DB file in project repo or local config directory for portability  
+  • Provide CLI commands to read/write keys, rotate, and export artifacts  
 
-This approach ensures a deployable, low-friction POC aligned with the target ICP’s needs and the project’s rapid iteration goals.
-- Infra Engineer: Plan a hybrid AWS + Vercel + Terraform deployment for the Unified API Key Gateway MVP:
+This approach enables rapid POC delivery without external dependencies, aligns with the builder’s CLI-first, local-first mandate, and keeps security manageable for seed-stage SaaS teams.
+- Infra Engineer: Deploy a minimal viable unified API key gateway as a serverless app on AWS + Vercel, managed via Terraform:
 
-1. **AWS Infra (Terraform):**  
-- Use AWS Secrets Manager for centralized, encrypted storage of third-party API keys (supports audit/compliance).  
-- Deploy a lightweight API Gateway + Lambda proxy layer to handle unified key authentication and proxy requests to third-party APIs.  
-- Use DynamoDB for metadata (projects, keys, usage logs).  
-- Terraform manages all infra as code for repeatability and versioning.
+1. **AWS Infra:**
+   - Use AWS Lambda (Node.js) for API key proxy and provisioning logic.
+   - Store encrypted keys in AWS Secrets Manager with fine-grained IAM roles.
+   - Use API Gateway to expose Lambda endpoints securely.
+   - Enable CloudWatch logging and alarms for anomaly detection.
+   - Use AWS KMS for encryption keys, ensuring zero-trust architecture.
 
-2. **Vercel Frontend:**  
-- Host the developer portal and onboarding UI on Vercel for fast global CDN and easy CI/CD integration.  
-- Use serverless functions for CLI token issuance and Slack bot integration.
+2. **Vercel Frontend:**
+   - Host a React dashboard for onboarding and key management.
+   - Integrate with GitHub OAuth for repo-based project onboarding.
+   - Use Vercel Serverless Functions for lightweight API calls (e.g., GitHub webhook handling).
 
-3. **Tradeoffs:**  
-- AWS Secrets Manager adds cost but ensures compliance and centralized control, addressing skeptic concerns.  
-- Local file-backed model is simpler but risks auditability and scaling; AWS Secrets Manager mitigates this.  
-- Vercel accelerates frontend deployment but adds a second cloud provider; acceptable for MVP speed and developer experience.
+3. **Terraform:**
+   - Define AWS resources (Lambda, API Gateway, Secrets Manager, KMS).
+   - Manage Vercel project and environment variables via Terraform provider.
+   - Automate deployment pipelines with Terraform Cloud or GitHub Actions.
 
-4. **Actionables:**  
-- Define Terraform modules for AWS Secrets Manager, Lambda, API Gateway, DynamoDB.  
-- Build minimal Lambda proxy to authenticate unified key and forward requests.  
-- Develop Vercel frontend with CLI token issuance and Slack onboarding bot.  
-- Integrate Terraform deployment pipeline with GitHub Actions.
+**Tradeoffs:**
+- Serverless reduces ops burden but may hit cold start latency.
+- AWS Secrets Manager adds cost but ensures secure key storage.
+- Partial automation due to third-party API limitations; start with top 5 APIs with best automation support.
+- Vercel frontend accelerates developer onboarding but adds cross-cloud complexity.
+- Terraform ensures reproducibility but requires initial learning curve.
 
-This shape balances MVP speed, compliance readiness, and developer UX for targeted SaaS startups.
+**Action:**
+- Build POC Lambda functions for Stripe and Twilio key proxy.
+- Deploy minimal Vercel dashboard with GitHub onboarding.
+- Write Terraform scripts for AWS infra and Vercel config.
+- Validate security posture and latency under load.
 - DevOps Engineer: GitHub Automation & Checks:
-- Use GitHub Actions for CI/CD pipelines.
-- On PR: run lint, unit tests, and security scans on code and config files (e.g., check for accidental API key commits).
-- On merge to main: run integration tests with mocked API key proxying.
-- Use branch protection rules requiring passing checks and code review.
+- Use GitHub Actions to automate CI/CD pipelines triggered on PRs and merges.
+- Implement linting, security scanning (e.g., secret detection, dependency checks), and unit tests as mandatory checks to catch credential leaks early.
+- Add a custom workflow step to validate API gateway config files (YAML/JSON) for correct key mappings and scopes.
+- Automate semantic version tagging and changelog generation on release branches.
 
 Deployment Notes:
-- Start with CLI-first, local file-backed MVP to avoid fragile external dependencies.
-- Deploy POC as a GitHub Pages or simple static site for docs; CLI tool distributed via GitHub Releases.
-- No paid services or external deployments initially to speed iteration.
-- Use GitHub Secrets for storing any deployment tokens securely.
-- Document manual steps for onboarding and key rotation workflows.
+- Deploy CLI-first POC as a GitHub Marketplace app with minimal external dependencies.
+- Use GitHub Secrets to store any deployment credentials securely.
+- Deploy on GitHub-hosted runners initially to avoid infrastructure overhead.
+- Release with a free tier supporting top 5 APIs; monitor usage and errors via GitHub Actions logs.
+- Document manual rollback steps and emergency key revocation procedures.
 
 Tradeoffs:
-- Local file-backed model limits centralized audit/compliance; acceptable for early-stage startups but not enterprises.
-- Avoiding cloud deployment reduces complexity but limits real-time multi-user sync and monitoring.
-- GitHub Actions provide free, integrated automation but have runtime limits and less flexibility than dedicated CI.
+- GitHub Actions limits runtime and concurrency; suitable for POC but may need dedicated CI for scale.
+- Marketplace app deployment accelerates adoption but requires compliance with GitHub policies.
+- Avoid paid services initially to reduce cost and complexity but may limit automation scope.
+- Security scanning in CI adds overhead but is critical given sensitive credential handling.
 
 Action:
-- Define GitHub Actions workflows for lint, test, and security scans.
-- Create branch protection rules.
-- Prepare deployment scripts for CLI tool release.
-- Document manual onboarding and rotation steps for MVP users.
-- OpenSpec Writer: Implementation Requirements:
-1. CLI-first tool that generates a local file-backed project config storing unified API key metadata and encrypted third-party API keys.
-2. Proxy server component that reads local config, intercepts unified key requests, and routes them to corresponding third-party APIs with injected keys.
-3. Support onboarding new third-party APIs with a single CLI command that updates local config and provisions keys.
-4. Basic audit log stored locally, tracking key usage and rotations.
-5. Free tier limits: max 3 third-party APIs per project.
-6. No external paid services or cloud deployment in MVP; all components run locally or on developer machines.
-7. Security: encrypt keys at rest, require local user authentication to unlock keys.
-8. Exportable config format for handoff to future agent crews.
+- Define GitHub Actions workflows for lint, test, security scan, and deploy.
+- Prepare Marketplace app manifest and onboarding docs.
+- Implement config validation step in CI.
+- Plan manual rollback and incident response playbook.
+- OpenSpec Writer: Implementation Requirements for Unified API Key Gateway MVP:
 
-Acceptance Checks:
-- CLI can create a new project with a unified API key.
-- Proxy correctly forwards requests to at least 3 different third-party APIs using stored keys.
-- Adding/removing APIs updates local config and proxy behavior immediately.
-- Audit logs record key usage events locally.
-- Encryption and local authentication prevent unauthorized key access.
-- MVP runs fully offline without external dependencies.
+1. Scope: Support top 5 third-party APIs (e.g., Stripe, Twilio, SendGrid, GitHub, Slack) with documented API key provisioning endpoints or OAuth token refresh flows.
+
+2. Architecture: CLI-first, local-first, file-backed prototype that generates config/artifacts readable by downstream agents; no external paid services or deployments initially.
+
+3. Features:
+   - Single unified API key per project that proxies requests to underlying third-party APIs.
+   - Automated provisioning and rotation where API supports it; manual fallback UI for others.
+   - Secure local storage of credentials with encryption at rest.
+   - Simple onboarding flow triggered at repo creation (GitHub Marketplace app integration optional for POC).
+   - Audit logs of key usage and rotation events.
+
+4. Security:
+   - Encrypt stored credentials using strong symmetric encryption.
+   - Zero-trust design: no credentials sent outside local environment during POC.
+   - Clear documentation of data ownership and breach response.
+
+Acceptance Criteria:
+
+- CLI tool can create a unified key that proxies calls to at least 3 supported APIs.
+- Automated provisioning works end-to-end for at least 2 APIs.
+- Manual fallback UI allows adding keys for APIs without automation.
+- Local encrypted storage persists keys and config files.
+- Onboarding flow completes within 5 minutes for a new project.
+- No external paid services or fragile integrations used.
+- Security review confirms no plaintext credential leaks.
 
 Tradeoffs:
-- Local file-backed storage limits centralized audit/compliance, acceptable for target startups but not regulated enterprises.
-- No cloud deployment reduces complexity and cost but restricts team-wide real-time key sharing.
-- CLI-first approach speeds MVP delivery but may limit UX for non-technical users initially.
+
+- Limiting to 5 APIs reduces scope but enables focused POC.
+- Local-first approach avoids early trust/security barriers but delays cloud multi-user sync.
+- Partial automation accepted due to API heterogeneity; manual fallback ensures coverage.
+
+Next step: Build CLI prototype with local encrypted storage and proxy logic for 3 APIs, demo automated provisioning for 2, and validate onboarding flow.
